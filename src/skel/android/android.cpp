@@ -390,9 +390,94 @@ PadTargetField(CControllerState *state, int target)
 	return nil;
 }
 
+// The pad buttons a vehicle action lives on, for the controller configuration
+// the frontend has chosen (CPad::Mode, the CONFIG 1..4 of the controls page).
+// This is the same table CPad itself reads in GetHandBrake, GetExitVehicle,
+// GetHorn, ChangeStationJustDown and GetCarGunFired; each action has a button
+// of its own in every configuration, so no two of them can collide.
+enum eVehicleAction
+{
+	VEHICLE_ACTION_HANDBRAKE,
+	VEHICLE_ACTION_EXIT,
+	VEHICLE_ACTION_HORN,
+	VEHICLE_ACTION_RADIO,
+	VEHICLE_ACTION_FIRE
+};
+
+static int16 *
+VehicleActionField(CControllerState *state, int action, int mode)
+{
+	switch(action){
+	case VEHICLE_ACTION_HANDBRAKE:
+		return mode == 2 ? &state->Triangle :
+		       mode == 3 ? &state->LeftShoulder1 : &state->RightShoulder1;
+	case VEHICLE_ACTION_EXIT:
+		return mode == 2 ? &state->LeftShoulder1 : &state->Triangle;
+	case VEHICLE_ACTION_HORN:
+		return mode == 1 ? &state->LeftShoulder1 :
+		       mode == 2 ? &state->RightShoulder1 : &state->LeftShock;
+	case VEHICLE_ACTION_RADIO:
+		return mode == 1 ? &state->Select :
+		       mode == 2 ? &state->LeftShock :
+		       mode == 3 ? &state->Circle : &state->LeftShoulder1;
+	case VEHICLE_ACTION_FIRE:
+		return mode == 3 ? &state->RightShoulder1 : &state->Circle;
+	}
+	return nil;
+}
+
+// The in-car layout (docs/STEAM_FRAME.md has the table):
+//   right trigger accelerate, left trigger brake and reverse,
+//   A handbrake, Y get in and out (and nothing else), X next radio station,
+//   B fire the vehicle's weapon or the driver's gun, left stick click horn,
+//   left bumper look left, right bumper look right, both look behind.
+// The grips, the right stick click and the camera-mode button do nothing here.
+static void
+ApplyVehiclePadLayout(CControllerState *state, const PadInput &input,
+                      bool includeTriggers)
+{
+	const int mode = CPad::GetPad(0)->GetMode();
+	const int16 leftTrigger = includeTriggers ?
+		(int16)(Clamp(input.leftTrigger, 0.0f, 1.0f)*255.0f) : (int16)0;
+	const int16 rightTrigger = includeTriggers ?
+		(int16)(Clamp(input.rightTrigger, 0.0f, 1.0f)*255.0f) : (int16)0;
+
+	if(mode == 3){
+		// Configuration 4 drives with the right stick: forward is the
+		// accelerator, back is the brake.
+		const int16 axis = (int16)((leftTrigger-rightTrigger)/2);
+		if(axis != 0)
+			state->RightStickY = axis;
+	}else{
+		state->Cross = Max(state->Cross, rightTrigger);
+		state->Square = Max(state->Square, leftTrigger);
+	}
+
+	const struct { int action; bool pressed; } actions[] = {
+		{ VEHICLE_ACTION_HANDBRAKE, input.a },
+		{ VEHICLE_ACTION_EXIT,      input.y },
+		{ VEHICLE_ACTION_RADIO,     input.x },
+		{ VEHICLE_ACTION_FIRE,      input.b },
+		{ VEHICLE_ACTION_HORN,      input.leftStickClick },
+	};
+	for(size_t i = 0; i < sizeof(actions)/sizeof(actions[0]); i++){
+		int16 *field = VehicleActionField(state, actions[i].action, mode);
+		if(field && actions[i].pressed)
+			*field = 255;
+	}
+#if MIAMIVR_STEAM_FRAME
+	// The pad's own look buttons: L2 left, R2 right, both behind. Drive-by
+	// with the Uzi is a look plus B.
+	if(input.leftBumper)
+		state->LeftShoulder2 = 255;
+	if(input.rightBumper)
+		state->RightShoulder2 = 255;
+#endif
+}
+
 void
 VrApplyPadBindings(CControllerState *state, const PadInput &input,
-                   bool includeTriggers)
+                   bool includeTriggers, bool vehicleLayout)
 {
 	if(!state)
 		return;
@@ -416,17 +501,25 @@ VrApplyPadBindings(CControllerState *state, const PadInput &input,
 		(int16)(input.rightStickClick ? 255 : 0)
 	};
 
-	// Remapping is an on-foot feature; see the enum in android.h for why a
-	// vehicle keeps the shipped assignment.
-	const bool onFoot = FindPlayerVehicle() == nil &&
-		!CWorld::Players[CWorld::PlayerInFocus].IsPlayerInRemoteMode();
-
 	for(int target = VR_PAD_TARGET_NONE+1; target < VR_PAD_TARGET_COUNT;
 	    target++){
 		int16 *field = PadTargetField(state, target);
 		if(field)
 			*field = 0;
 	}
+	// A vehicle has its own layout (see ApplyVehiclePadLayout): remapping is
+	// an on-foot feature, and the shipped on-foot table would put the
+	// accelerator on A as well as on the trigger.
+	if(vehicleLayout){
+		ApplyVehiclePadLayout(state, input, includeTriggers);
+		return;
+	}
+	// Remapping is an on-foot feature; see the enum in android.h for why a
+	// vehicle keeps its own assignment. In the frontend, or in a vehicle with
+	// a menu open, the shipped table applies so A still confirms.
+	const bool onFoot = FindPlayerVehicle() == nil &&
+		!CWorld::Players[CWorld::PlayerInFocus].IsPlayerInRemoteMode();
+
 	// Two sources may share a button; the stronger press wins rather than the
 	// later one in the table.
 	for(int source = 0; source < VR_PAD_SOURCE_COUNT; source++){
@@ -534,6 +627,11 @@ bool gVrThirdPersonOnFoot;
 static CVector gVrChaseHoldHead;
 static CVector gVrChaseHoldForward;
 static bool gVrChaseHoldValid;
+// Set when the held view was taken in a vehicle. Getting out of a moving car
+// takes a couple of seconds and the car keeps rolling, so the held view rides
+// along with it instead of staying where the car left it.
+static const CVehicle *gVrChaseHoldVehicle;
+static CVector gVrChaseHoldVehiclePosition;
 
 // First person on foot with the head modes (MOVEMENT DIRECTION HEAD or HEAD
 // TURN): the anchor frame is the gameplay camera and the stick is turned by the
@@ -1260,12 +1358,23 @@ VrUpdateFirstPersonAnchor(bool postPhysics)
 			gVrChaseHoldHead = head;
 			gVrChaseHoldForward = forward;
 			gVrChaseHoldValid = true;
+			gVrChaseHoldVehicle = thirdPersonVehicle ?
+				player->m_pMyVehicle : nil;
+			if(gVrChaseHoldVehicle != nil)
+				gVrChaseHoldVehiclePosition =
+					player->m_pMyVehicle->GetPosition();
 #endif
 		}
 #if MIAMIVR_STEAM_FRAME
 		if(thirdPersonHold){
 			head = gVrChaseHoldHead;
 			forward = gVrChaseHoldForward;
+			// Only the player's own reference is dereferenced: the pointer
+			// kept from before is compared, never followed.
+			if(gVrChaseHoldVehicle != nil &&
+			   player->m_pMyVehicle == gVrChaseHoldVehicle)
+				head += player->m_pMyVehicle->GetPosition() -
+					gVrChaseHoldVehiclePosition;
 		}
 #endif
 		bool fullVehicleBasis = false;
@@ -1590,7 +1699,19 @@ CapturePad(RwInt32 padID)
 	// Stage 1 has no tracked weapons, so every on-foot mode plays on the pad's
 	// own layout; the triggers are the accelerator and brake only in a vehicle.
 	const bool padOnFoot = onFootGameplay;
-	androidgame::VrApplyPadBindings(&state, bound, !padOnFoot);
+	// The driving layout is for driving only: a menu, a cutscene or the intro
+	// keeps the shipped buttons, so A still confirms and skips.
+	const bool vehicleGameplay =
+		(FindPlayerVehicle() != nil || remoteMode) &&
+		gGameState == GS_PLAYING_GAME &&
+		!FrontEndMenuManager.m_bGameNotLoaded &&
+		!FrontEndMenuManager.m_bMenuActive &&
+		!CGame::playingIntro &&
+		!CCutsceneMgr::IsRunning() &&
+		!CCutsceneMgr::IsCutsceneProcessing() &&
+		!TheCamera.m_WideScreenOn;
+	androidgame::VrApplyPadBindings(&state, bound, !padOnFoot,
+	                                vehicleGameplay);
 #if MIAMIVR_STEAM_FRAME
 	if(padOnFoot){
 		// A pad's own layout: the right trigger fires and the left aims (R1
@@ -1666,6 +1787,13 @@ CapturePad(RwInt32 padID)
 	if(in.dpadUp)    state.DPadUp    = 255;
 	if(in.dpadDown)  state.DPadDown  = 255;
 #endif
+	// Controller configuration 2 cycles the car camera on D-pad up and down,
+	// and the stick-built D-pad would do it every time the stick reached the
+	// rim. In a car the camera mode is not a button on this build.
+	if(vehicleGameplay && padMode == 1){
+		state.DPadUp = 0;
+		state.DPadDown = 0;
+	}
 }
 
 // GetLocalTime_CP comes from src/skel/crossplatform.cpp, which is already in

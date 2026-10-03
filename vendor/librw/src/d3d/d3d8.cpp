@@ -540,10 +540,58 @@ readAsImage(Stream *stream, int32 width, int32 height, int32 depth, int32 format
 // that made every DXT and raw-format texture fall back to the 1x1 white --
 // palettised textures worked (they already went through readAsImage), so peds
 // and fonts were textured while roads and walls rendered white.
+#ifdef RW_VULKAN
+// GTA III's radar tiles (radar00..radar63) are the one place a TXD's pixel
+// content decides whether the game's map is readable, and the dumps cannot
+// show which format they arrive in. Say so once per tile when one is read.
+static bool
+isRadarTileName(const char *name)
+{
+	return name != nil && strncmp(name, "radar", 5) == 0 &&
+	       name[5] >= '0' && name[5] <= '9' &&
+	       name[6] >= '0' && name[6] <= '9' && name[7] == '\0';
+}
+
+static void
+logRadarTile(const char *name, int32 width, int32 height, int32 format,
+             int32 numLevels, int32 compression, int32 hasAlpha,
+             const Image *img)
+{
+	uint32 transparent = 0, opaque = 0, colours = 0;
+	uint32 seen[8] = { 0 };
+	if(img != nil && img->pixels != nil){
+		for(int32 y = 0; y < img->height; y++){
+			const uint8 *line = img->pixels + (size_t)y*img->stride;
+			for(int32 x = 0; x < img->width; x++){
+				const uint8 *px = line + x*img->bpp;
+				if(px[3] == 0)
+					transparent++;
+				else if(px[3] == 255)
+					opaque++;
+				const uint32 rgb = px[0] | px[1]<<8 | px[2]<<16;
+				bool found = false;
+				for(uint32 i = 0; i < colours && i < 8; i++)
+					if(seen[i] == rgb){ found = true; break; }
+				if(!found){
+					if(colours < 8)
+						seen[colours] = rgb;
+					colours++;
+				}
+			}
+		}
+	}
+	printf("[radar] %s %dx%d format=0x%x levels=%d dxt=%d streamHasAlpha=%d "
+	       "texels: alpha0=%u alpha255=%u distinctRGB=%u first=%06x,%06x,%06x\n",
+	       name, width, height, (unsigned)format, numLevels, compression,
+	       hasAlpha, transparent, opaque, colours,
+	       seen[0], seen[1], seen[2]);
+}
+#endif
+
 static Raster*
-readAsImageAnyFormat(Stream *stream, int32 width, int32 height, int32 depth,
-                     int32 format, int32 numLevels, int32 compression,
-                     int32 hasAlpha)
+readAsImageAnyFormat(const char *name, Stream *stream, int32 width, int32 height,
+                     int32 depth, int32 format, int32 numLevels,
+                     int32 compression, int32 hasAlpha)
 {
 	uint8 palette[256*4];
 	int32 pallen = 0;
@@ -629,6 +677,9 @@ readAsImageAnyFormat(Stream *stream, int32 width, int32 height, int32 depth,
 			ras = rw::vulkan::rasterFromDXT(width, height, compression,
 				hasAlpha, data, used, levelSizes, chainLevels);
 			if(ras != nil){
+				if(isRadarTileName(name))
+					logRadarTile(name, width, height, format, numLevels,
+					             compression, hasAlpha, nil);
 				rwFree(data);
 				continue;
 			}
@@ -717,6 +768,12 @@ readAsImageAnyFormat(Stream *stream, int32 width, int32 height, int32 depth,
 		}
 		rwFree(data);
 
+#ifdef RW_VULKAN
+		if(isRadarTileName(name))
+			logRadarTile(name, width, height, format, numLevels,
+			             compression, hasAlpha, img);
+#endif
+
 		int32 newWidth, newHeight, newDepth, newFormat;
 		Raster::imageFindRasterFormat(img, Raster::TEXTURE,
 			&newWidth, &newHeight, &newDepth, &newFormat);
@@ -765,8 +822,8 @@ readNativeTexture(Stream *stream)
 	// everything -- palettised, compressed, raw -- goes through an Image and
 	// comes out as a raster of the current platform.
 	if(rw::platform == PLATFORM_VULKAN){
-		tex->raster = readAsImageAnyFormat(stream, width, height, depth,
-			format|type, numLevels, compression, hasAlpha);
+		tex->raster = readAsImageAnyFormat(tex->name, stream, width, height,
+			depth, format|type, numLevels, compression, hasAlpha);
 		return tex;
 	}
 

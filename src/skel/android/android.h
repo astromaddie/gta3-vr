@@ -85,11 +85,10 @@ struct PadInput
 
 // Controller remapping. Every physical Touch input the game reads as a plain
 // button drives one of Vice City's pad buttons, and the CONTROLS page of the VR
-// menu decides which. It is an on-foot feature: the VR driving layer reads X, A
-// and B straight from the controller for the radio, the handbrake and the
-// drive-by weapon, so a vehicle keeps the shipped assignment rather than firing
-// a moved binding alongside the gesture. The thumbsticks, the menu button and
-// the weapon triggers are outside it entirely.
+// menu decides which. It is an on-foot feature: a vehicle has a driving layout
+// of its own (VrApplyPadBindings), so a moved binding cannot fire alongside the
+// accelerator or the handbrake. The thumbsticks, the menu button and the
+// weapon triggers are outside it entirely.
 enum eVrPadSource
 {
 	VR_PAD_SOURCE_A = 0,
@@ -131,8 +130,11 @@ int VrPadBindingDefault(int source);
 // current assignment. The triggers are the analogue accelerator and brake in a
 // vehicle and belong to the weapon on foot, so the on-foot pass leaves them
 // out instead of letting them arrive as a second button press.
+// vehicleLayout: the player is driving. The driving layout replaces the table:
+// RT accelerate, LT brake, A handbrake, Y get out, X radio, B fire, L3 horn,
+// bumpers look left and right (see docs/STEAM_FRAME.md).
 void VrApplyPadBindings(CControllerState *state, const PadInput &input,
-                        bool includeTriggers);
+                        bool includeTriggers, bool vehicleLayout);
 
 void SetPadInput(const PadInput &input);
 const PadInput &GetPadInput(void);

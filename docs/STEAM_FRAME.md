@@ -5,8 +5,9 @@ Lepton, the Android 11 container the Frame uses. It draws in stereo with
 OpenXR and Vulkan, so there is no PC involved. You need your own copy of GTA
 III, either on the Frame through Steam (app 12100) or on a PC.
 
-It is early. It boots, starts a new game and renders in stereo, and that has
-only been checked with the headset sitting on a desk. Nobody has played it yet.
+It is early. It boots, starts a new game and renders in stereo. It has been worn
+once, for a short play: it worked, the minimap showed no roads and the in-car
+buttons were muddled, and both are fixed in the code but not tried since.
 [VR_ARCHITECTURE.md](VR_ARCHITECTURE.md) has the details and an honest status
 table, and [PORT_PLAN.md](PORT_PLAN.md) has the reasoning.
 
@@ -80,28 +81,63 @@ is.
 
 ### Controls
 
+Always, on foot or in a car:
+
 | Input | Action |
 | --- | --- |
 | R Menu | Pause (Start) |
 | L View, short press | Back in menus. During play, switch between first and third person |
 | L View, hold 1 s | Recentre, with a buzz on both hands |
 | Both grips + R Menu | The VR settings menu |
-| Left stick | Move |
+| Left stick | Move, or steer |
 | Right stick | Turn and look. On the 3D screen it drives the game's own camera |
 | L D-pad | The game's D-pad |
-| A, B, X, Y | Sprint/accelerate, fire, jump, enter or leave a vehicle. You can change these on the CONTROLS page |
 
-On foot:
+On foot (A, B, X, Y and the grips can be changed on the CONTROLS page):
 
 | Input | Action |
 | --- | --- |
+| A | Sprint |
+| B | Attack |
+| X | Jump |
+| Y | Get into a vehicle |
 | Right trigger | Fire |
 | Left trigger | Target |
 | Bumpers | Previous and next weapon |
-| Grips | L1 and R1 (changeable on the CONTROLS page) |
+| Left grip | Pick up |
+| Right grip | Target |
+| Stick clicks | L3 and R3 (R3 looks behind, off in first person) |
 
-In a vehicle the right trigger is the accelerator and the left trigger is
-brake and reverse, same as in the Vice City port.
+In a car, bike or boat. This layout is fixed and the CONTROLS page leaves it
+alone. Every action has a button of its own, so nothing doubles up:
+
+| Input | Action |
+| --- | --- |
+| Right trigger | Accelerate |
+| Left trigger | Brake, and reverse |
+| A | Handbrake |
+| Y | Get out. It does nothing else |
+| X | Next radio station |
+| B | Fire the vehicle's gun (tank, fire truck), or your own gun when you lean out |
+| Left stick click | Horn |
+| Left bumper | Look left (and lean out to the left with an Uzi) |
+| Right bumper | Look right (same on the right) |
+| Both bumpers | Look behind |
+| Grips, right stick click | Nothing |
+
+The car camera mode is not on a button here (the game's own button for it is
+Select, which this build never sends).
+
+Y only gets you out once the car is nearly stopped, as in the original game.
+The original also held the handbrake on for as long as you held the exit
+button, which skidded the car to a halt before you got out. That is gone here,
+so brake first (left trigger, or A for a quick stop) and then press Y. While
+Claude climbs out of a moving car in OVER SHOULDER, the held view now travels
+with the car instead of staying where the car left it.
+
+The layout follows the game's own controller setup. These are the buttons for
+the default one (CONFIG 1); the other three keep the same actions on the pad
+buttons they use, so the table above holds in all of them.
 
 ### Views
 
@@ -178,7 +214,10 @@ tools/steam_frame/tests/check_bindings.py       # host test for the controller b
 ```
 
 Log tags are `GTA3VR`, `GTA3VR-game` and `librw-vk`. The lines this port adds
-start with `[vr]`, `[vr-perf]` and `[vr-dump]`. `vr-state.txt` says whether the
+start with `[vr]`, `[vr-perf]` and `[vr-dump]`. Each radar tile that streams in
+logs one `[radar]` line (size, format, whether the TXD says it has alpha, how
+many texels have alpha 0, a few of its colours), which says what the minimap is
+being drawn from; add `radar` to the grep in a run script to see them. `vr-state.txt` says whether the
 dumped frame was a theater frame (menu, cutscene, 3D screen) or a stereo one.
 
 Don't run any of this while someone is wearing the headset: a launch replaces
@@ -194,4 +233,5 @@ Short version. The full table is in VR_ARCHITECTURE.md.
 | The APK builds (`com.gta3vr.frame`, minSdk 30), the bindings test passes | host |
 | Boots to the frontend at 72 fps, starts a new game, the opening cutscene shows in 3D cinema, first-person stereo gameplay renders (world, HUD, radar, coronas) | Frame, nobody wearing it |
 | Third person (both styles), head-relative movement, head aim, scope cameras, CAR VIEW | builds, not run |
-| Menus, driving, boats, audio, comfort, performance with traffic | not tried |
+| Minimap shows the whole map (roads, sea) after the tile alpha-test fix; the in-car layout and the held view riding with the car | builds, not run |
+| Menus, boats, audio, comfort, performance with traffic | not tried |

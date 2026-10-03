@@ -896,6 +896,19 @@ void CRadar::DrawRadarMap()
 	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
 	RwRenderStateSet(rwRENDERSTATETEXTUREADDRESS, (void*)rwTEXTUREADDRESSCLAMP);
 	RwRenderStateSet(rwRENDERSTATETEXTUREPERSPECTIVE, (void*)FALSE);
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// The map is an opaque picture. In RenderWare the alpha test only runs
+	// when vertex alpha is on or the texture's raster is flagged as carrying
+	// alpha (librw's GL3 backend does exactly this), and this pass turns
+	// vertex alpha off: whatever the tile texels hold in their alpha channel
+	// was never looked at. librw's Vulkan Im2D path tests alpha whenever the
+	// test function is set (GEQUAL, ref 3/255), so every tile texel with
+	// alpha 0 was discarded and the world showed through the disc: only the
+	// opaque land colour survived, roads and sea were holes. Run the tiles
+	// with the test off.
+	const uint32 savedAlphaFunc = rw::GetRenderState(rw::ALPHATESTFUNC);
+	rw::SetRenderState(rw::ALPHATESTFUNC, rw::ALPHAALWAYS);
+#endif
 
 	DrawRadarSection(x - 1, y - 1);
 	DrawRadarSection(x, y - 1);
@@ -906,6 +919,9 @@ void CRadar::DrawRadarMap()
 	DrawRadarSection(x - 1, y + 1);
 	DrawRadarSection(x, y + 1);
 	DrawRadarSection(x + 1, y + 1);
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	rw::SetRenderState(rw::ALPHATESTFUNC, savedAlphaFunc);
+#endif
 }
 
 void CRadar::DrawRadarMask() 

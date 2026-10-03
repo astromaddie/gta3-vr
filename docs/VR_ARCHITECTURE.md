@@ -8,7 +8,9 @@ plan this follows, with the reasons for each choice, is
 [STUBS.md](STUBS.md).
 
 Status in one line: the port boots, starts a game and renders in stereo with
-nobody wearing it. Nobody has played it yet. Section 9 says which claim is
+nobody wearing it, and it has been worn once for a short play (2026-10-03: it
+worked; the minimap showed no roads and the in-car buttons were muddled, both
+since fixed in the code and not yet re-tried). Section 9 says which claim is
 backed by what.
 
 ## 1. Target and probe facts
@@ -79,7 +81,7 @@ and builds, but nothing has exercised it.
 | Player body | Hidden on foot in first person (`gVrHidePlayerBody`); shown in both third-person views, in cars, and in scripted scenes | done on foot; the rest carried |
 | Driver head in first person | `CPed::PreRender` collapses the occupant's head while the eye sits inside it | carried (T7) |
 | HUD (Im2D) | Projected per eye onto a plane inside the multiview pass; safe-area transform; always drawn | done |
-| Radar | Vice City's 24-gon tile clipping in place of the depth mask, which fails under Adreno multiview | done |
+| Radar | Vice City's 24-gon tile clipping in place of the depth mask, which fails under Adreno multiview. The tiles are also drawn with the alpha test off (`DrawRadarMap`): librw's Vulkan Im2D path alpha-tests every draw, where RenderWare only does so with vertex alpha or an alpha raster, and the tile texels with alpha 0 were being discarded, which left only the land colour and no roads or sea. Each tile logs a `[radar]` line when it streams in | fixed in code after the first wear, not re-tried |
 | Coronas | Compact, no streaks, reflection `recipz`, headlight/streak types folded to normal | done |
 | Water | `WaterViewForward()` (the headset's forward, not the character's) | done |
 | Sky and clouds | `CClouds::Render` returns at once on Vulkan, so the sky is the clear colour. No clouds, sun glow or rainbow | **not done** |
@@ -109,18 +111,62 @@ host by `tools/steam_frame/tests/check_bindings.py`.
 | L View, hold 1 s or 3 s | Recentre, with the system buzz on both hands. There is no standing-height calibration, so 3 s recentres again. A recentre from the runtime does the same |
 | L D-pad | The game's D-pad, in the frontend and in play |
 | Both grips + Menu | VR menu |
-| Left stick | Move. In the frontend, the D-pad with hysteresis |
-| Right stick | Turn (smooth or snap) and look up and down. On the 3D screen it drives the stock camera raw |
-| A B X Y | Cross, Circle, Square, Triangle by default; on foot they follow the CONTROLS page |
-| Grips | L1 and R1 by default; on foot they follow the CONTROLS page |
-| Stick clicks | L3 and R3 by default. R3 (look behind) is off on foot in first person unless CONTROLS turns it on |
+| Left stick | Move or steer. In the frontend, the D-pad with hysteresis |
+| Right stick | Turn (smooth or snap) and look up and down. On the 3D screen it drives the stock camera raw. In a car it is the stock car camera |
 
-On foot the triggers are a pad's own layout: **right trigger fires** (Circle),
-**left trigger targets** (R1), and the **bumpers cycle weapons** (L2 and R2).
-In a vehicle they keep the Vice City mapping: right trigger is the accelerator
-(Cross), left trigger is brake and reverse (Square), and the bumpers do
-nothing. Remote-controlled vehicles count as vehicles, with A held back from
-its own binding so the stock fire action is not pressed twice.
+Pad routing is `CapturePad` (`android.cpp`) writing `CPad::PCTempJoyState`.
+`CPad::Update` reconciles that with the (empty) keyboard and mouse state, so
+CPad's own controller configuration (`CPad::Mode`, CONFIG 1 to 4 in the
+frontend) decides what each pad button means. `CControllerConfigManager`
+(`ControllerConfig.cpp`) only feeds keyboard and mouse here; the joystick path
+in it is not used, so its default joystick button assignments never apply.
+
+**On foot** (`VrApplyPadBindings`, the table in `vrmenu.cpp`; the CONTROLS page
+edits it):
+
+| Physical | Pad button | Does, in CONFIG 1 |
+| --- | --- | --- |
+| A | Cross | Sprint |
+| B | Circle | Attack |
+| X | Square | Jump |
+| Y | Triangle | Get into a vehicle |
+| Right trigger | Circle | Fire |
+| Left trigger | R1 | Target |
+| Left, right bumper | L2, R2 | Previous, next weapon |
+| Left grip | L1 | Pick up |
+| Right grip | R1 | Target |
+| Stick clicks | L3, R3 | R3 looks behind (off in first person on foot) |
+
+**In a vehicle** (`ApplyVehiclePadLayout`; fixed, the CONTROLS page does not
+touch it). The layout is a table of actions to the pad buttons CPad reads for
+the current `CPad::Mode`, so in any of the four configurations every action
+lands on its own button:
+
+| Physical | Action | CONFIG 1 button |
+| --- | --- | --- |
+| Right trigger | Accelerate | Cross (analogue) |
+| Left trigger | Brake, reverse | Square (analogue) |
+| A | Handbrake | R1 |
+| Y | Get out, and nothing else | Triangle |
+| X | Next radio station | L1 |
+| B | Fire the vehicle's gun, or the driver's Uzi | Circle |
+| Left stick click | Horn | L3 |
+| Left bumper | Look left (Uzi: lean out left) | L2 |
+| Right bumper | Look right | R2 |
+| Both bumpers | Look behind | L2 and R2 |
+| Grips, right stick click | Unbound | none |
+
+The camera-mode button is Select in CONFIG 1, which `CapturePad` never sends.
+CONFIG 2 puts it on D-pad up and down, so those two are cleared in a vehicle.
+The driving layout applies in a vehicle and in RC remote mode (there A is held
+back, so it stays the stock fire action) and nowhere else: menus, cutscenes and
+the intro keep the shipped table, so A still confirms.
+
+Stock GTA III held the handbrake on while the exit button was down
+(`CAutomobile::ProcessControlInputs`), which is why a press of Y at speed
+skidded the car to a halt before Claude got out (he leaves once the speed is
+under 0.17, `CPlayerInfo::Process`). On Vulkan/Android that is removed: Y is only
+"get out" and the handbrake is A. Brake, then Y.
 
 Index fallback: left B is Menu and left A is View. X and Y are reachable only
 through remapping.
@@ -133,7 +179,7 @@ third-person style.
 | View | What it is |
 | --- | --- |
 | THIRD: 3D SCREEN (default, D1) | Everything on foot, in cars, boats and RC vehicles plays on the theater screen from the stock camera. The right stick drives the camera raw; no head turning, no snap or smooth scaling. A recentre re-places the screen |
-| THIRD: OVER SHOULDER | Stereo from the stock chase camera. On foot via `thirdPersonOnFoot`; in vehicles via `thirdPersonVehicle` (the style is on, the player is in a vehicle, and no enter or exit is under way). The view is the chase camera's position and heading through the first-person machinery, so the horizon stays level. Entering or leaving a vehicle holds the last chase view still (`gVrChaseHold*`) |
+| THIRD: OVER SHOULDER | Stereo from the stock chase camera. On foot via `thirdPersonOnFoot`; in vehicles via `thirdPersonVehicle` (the style is on, the player is in a vehicle, and no enter or exit is under way). The view is the chase camera's position and heading through the first-person machinery, so the horizon stays level. Entering or leaving a vehicle holds the last chase view still (`gVrChaseHold*`); a hold taken in a car rides along with that car, so a car still rolling while Claude gets out does not drive out of the picture |
 | FIRST PERSON | The anchor is the player's head bone, nudged 0.12 m forward, with a level horizon. In a vehicle it is yaw-only unless `VehicleFollowRotation` is on, when the whole car basis is followed |
 
 Third person shows the body and the full HUD, and the stick is not turned by
@@ -236,14 +282,16 @@ driven by `vr-diag.ini`), **not worn** (nobody has played it).
 | Opening cutscene renders in 3D cinema, the eyes differ | device, unattended |
 | First-person stereo gameplay: world, HUD plane, round radar, compact coronas, body hidden, 72 fps | device, unattended |
 | Fixes found on the way: no TXD.IMG cache on Vulkan; 3D cinema through GTA III's `playingIntro` | device, unattended |
-| Pad mapping (on foot and in vehicles), Menu as Start, View short and hold, system recentre, sfvr timing | host build (read against the Vice City build, which is worn) |
+| Pad mapping on foot, Menu as Start, View short and hold, system recentre, sfvr timing | host build (read against the Vice City build, which is worn) |
+| Pad mapping in vehicles: the first wear found A and the trigger both accelerating and the exit button also holding the handbrake; replaced by the fixed driving layout above | host build, not worn since the change |
 | Each view mode after the intro (`ViewMode` 0/2/1, new game, dump at frame 20000): first person stereo with the body hidden; over-shoulder stereo with Claude visible; the 3D screen on the cinema screen in 3D. 72 fps in all three | device, unattended |
 | The View toggle in play, the held chase view through car entry | host build, not worn |
 | Head-relative movement and head aim (`[vr] head modes: head frame on, head aim on` in first person) | device, unattended (log only; head turns can't be shown with the fixed synthetic head) |
 | Head-driven sniper/M16/rocket cameras | host build, not worn |
 | `VehicleFollowRotation` and its CAR VIEW row | host build, not worn |
 | Audio backend comes up (AAudio mixer, 48 kHz); the stereo IMA ADPCM streams (radio, cutscenes) decode bit-exact against macOS `afconvert` | device, unattended; host test |
-| Menus, loading screens, driving, boats, RC vehicles, pause, hearing the audio | not worn |
+| Menus, loading screens, boats, RC vehicles, pause, hearing the audio | not worn |
+| Driving (first wear: it drove, with the problems above) | worn once |
 | Comfort, performance in gameplay with traffic, colours | not worn |
 
 ## 10. Open items
