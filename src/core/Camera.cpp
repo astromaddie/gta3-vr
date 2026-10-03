@@ -32,6 +32,9 @@
 #include "GenericGameStorage.h"
 #include "MemoryCard.h"
 #include "Camera.h"
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+#include "../skel/android/android.h"
+#endif
 
 enum
 {
@@ -3562,6 +3565,17 @@ CCamera::Find3rdPersonCamTargetVector(float dist, CVector pos, CVector &source, 
 		target = dist*Cams[ActiveCam].CamTargetEntity->GetForward() + source;
 		return false;
 	}else{
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+		// VR head aim: the shot goes where the headset looks, from the weapon.
+		float headAim[3];
+		if(androidgame::VrHeadAimDirection(headAim)){
+			target = CVector(headAim[0], headAim[1], headAim[2]);
+			target.Normalise();
+			source = pos;
+			target = dist*target + source;
+			return true;
+		}
+#endif
 		float angleX = DEGTORAD((m_f3rdPersonCHairMultX-0.5f) * 1.8f * 0.5f * Cams[ActiveCam].FOV * CDraw::GetAspectRatio());
 		float angleY = DEGTORAD((0.5f-m_f3rdPersonCHairMultY) * 1.8f * 0.5f * Cams[ActiveCam].FOV);
 		source = Cams[ActiveCam].Source;

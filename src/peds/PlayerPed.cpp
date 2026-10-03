@@ -17,6 +17,9 @@
 #include "Darkel.h"
 #include "CarCtrl.h"
 #include "SaveBuf.h"
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+#include "../skel/android/android.h"
+#endif
 
 #define PAD_MOVE_TO_GAME_WORLD_MOVE 60.0f
 
@@ -722,6 +725,23 @@ CPlayerPed::PlayerControl1stPersonRunAround(CPad *padUsed)
 	float padMove = CVector2D(leftRight, upDown).Magnitude();
 	float padMoveInGameUnit = padMove / PAD_MOVE_TO_GAME_WORLD_MOVE;
 	if (padMoveInGameUnit > 0.0f) {
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+		// VR head modes: the ped runs where the player looks instead of
+		// facing the camera and strafing the difference.
+		if(androidgame::VrHeadMovementActive()){
+			// The ped moves along (-Sin(rot), Cos(rot)), so the heading is
+			// built in that convention, as PlayerControlZelda does.
+			const float movementHeading = CGeneral::LimitRadianAngle(
+				CGeneral::GetRadianAngleBetweenPoints(
+					0.0f, 0.0f, -leftRight, upDown) - TheCamera.Orientation);
+			m_fRotationDest = movementHeading;
+			// Aim the body now, before the animation groups run; the stock
+			// heading rate would leave a stale stick angle behind and pick
+			// the strafe set.
+			m_fRotationCur = movementHeading;
+			m_fWalkAngle = 0.0f;
+		} else
+#endif
 		m_fRotationDest = CGeneral::LimitRadianAngle(TheCamera.Orientation);
 		m_fMoveSpeed = Min(padMoveInGameUnit, 0.07f * CTimer::GetTimeStep() + m_fMoveSpeed);
 	} else {
@@ -1248,6 +1268,16 @@ CPlayerPed::PlayerControlZelda(CPad *padUsed)
 				m_fRotationDest = m_fRotationCur - leftRight / 128.0f * (PI / 128.0f) * CTimer::GetTimeStep();
 		} else {
 			m_fRotationDest = neededTurn;
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+			// VR head modes: m_fRotationDest already holds the direction the
+			// stick asks for; aim the body at it at once instead of turning at
+			// the stock rate, so a turn of the head is a turn of the walk.
+			// A locked-on target keeps the stock behaviour.
+			if(!m_pPointGunAt && androidgame::VrHeadMovementActive()){
+				m_fRotationCur = m_fRotationDest;
+				m_fWalkAngle = 0.0f;
+			}
+#endif
 		}
 
 		float maxAcc = 0.07f * CTimer::GetTimeStep();
@@ -1402,6 +1432,20 @@ CPlayerPed::ProcessControl(void)
 			}
 			if (IsPedInControl() && padUsed)
 				ProcessPlayerWeapon(padUsed);
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+			// VR head aim: while the fire button is down the ped turns to
+			// where the headset looks, so a shot -- along the ped's heading in
+			// the pad's control method -- goes where the player looks. (The
+			// mouse camera's shots take the same direction in
+			// CCamera::Find3rdPersonCamTargetVector.)
+			if (IsPedInControl() && padUsed && padUsed->GetWeapon()) {
+				float headAimHeading;
+				if (androidgame::VrHeadAimHeading(&headAimHeading)) {
+					m_fRotationDest = m_fRotationCur = headAimHeading;
+					SetHeading(headAimHeading);
+				}
+			}
+#endif
 			break;
 		case PED_SEEK_ENTITY:
 			m_vecSeekPos = m_pSeekTarget->GetPosition();

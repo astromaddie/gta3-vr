@@ -1404,7 +1404,17 @@ CPed::CalculateNewVelocity(void)
 		|| FindPlayerPed() != this || !CanStrafeOrMouseControl())
 		return;
 
-	float walkAngle = WorkOutHeadingForMovingFirstPerson(m_fRotationCur);
+	float movementReferenceHeading = m_fRotationCur;
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// VR head modes: the stick has been turned by the head already and the
+	// frame the headset plays in is the gameplay camera, so the walk angle is
+	// measured against the camera rather than the body.
+	const bool vrHeadMovement = androidgame::VrHeadMovementActive();
+	if(vrHeadMovement)
+		movementReferenceHeading =
+			TheCamera.Cams[TheCamera.ActiveCam].Front.Heading();
+#endif
+	float walkAngle = WorkOutHeadingForMovingFirstPerson(movementReferenceHeading);
 	float pedSpeed = m_moved.Magnitude();
 	float localWalkAngle = CGeneral::LimitRadianAngle(walkAngle - m_fRotationCur);
 
@@ -1415,6 +1425,16 @@ CPed::CalculateNewVelocity(void)
 	}
 
 	// Interestingly this part is responsible for diagonal walking.
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	if (vrHeadMovement) {
+		// The stock gate applies the requested direction only within 50
+		// degrees of the body and drops the rest, which silently loses the
+		// sideways part of a turned head. The body is hidden in these modes,
+		// so apply the direction as asked.
+		TheCamera.Cams[TheCamera.ActiveCam].m_fPlayerVelocity = pedSpeed;
+		m_moved = CVector2D(-Sin(walkAngle), Cos(walkAngle)) * pedSpeed;
+	} else
+#endif
 	if (localWalkAngle > -DEGTORAD(50.0f) && localWalkAngle < DEGTORAD(50.0f)) {
 		TheCamera.Cams[TheCamera.ActiveCam].m_fPlayerVelocity = pedSpeed;
 		m_moved = CVector2D(-Sin(walkAngle), Cos(walkAngle)) * pedSpeed;

@@ -24,6 +24,9 @@
 #include "SceneEdit.h"
 #include "Debug.h"
 #include "Camera.h"
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+#include "../skel/android/android.h"
+#endif
 #include "DMAudio.h"
 
 bool PrintDebugCode = false;
@@ -2514,6 +2517,10 @@ CCam::Process_Rocket(const CVector &CameraTarget, float, float, float)
 	while(Beta < -PI) Beta += 2*PI;
 	if(Alpha > DEGTORAD(60.0f)) Alpha = DEGTORAD(60.0f);
 	if(Alpha < -DEGTORAD(89.5f)) Alpha = -DEGTORAD(89.5f);
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// VR head aim: the weapon camera follows the headset, not the stick.
+	androidgame::VrHeadAimCamera(&Beta, &Alpha);
+#endif
 
 	TargetCoors.x = 3.0f * Cos(Alpha) * Cos(Beta) + Source.x;
 	TargetCoors.y = 3.0f * Cos(Alpha) * Sin(Beta) + Source.y;
@@ -2622,6 +2629,10 @@ CCam::Process_M16_1stPerson(const CVector &CameraTarget, float, float, float)
 	while(Beta < -PI) Beta += 2*PI;
 	if(Alpha > DEGTORAD(60.0f)) Alpha = DEGTORAD(60.0f);
 	else if(Alpha < -DEGTORAD(89.5f)) Alpha = -DEGTORAD(89.5f);
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// VR head aim: the weapon camera follows the headset, not the stick.
+	androidgame::VrHeadAimCamera(&Beta, &Alpha);
+#endif
 
 #if GTA_VERSION >= GTA3_PC_11
 	HeadPos.x = 0.0f;
@@ -2919,6 +2930,10 @@ CCam::Process_1rstPersonPedOnPC(const CVector&, float TargetOrientation, float, 
 		while(Beta < -PI) Beta += 2*PI;
 		if(Alpha > DEGTORAD(60.0f)) Alpha = DEGTORAD(60.0f);
 		else if(Alpha < -DEGTORAD(89.5f)) Alpha = -DEGTORAD(89.5f);
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+		// VR head aim: the weapon camera follows the headset, not the stick.
+		androidgame::VrHeadAimCamera(&Beta, &Alpha);
+#endif
 
 		TargetCoors.x = 3.0f * Cos(Alpha) * Cos(Beta) + Source.x;
 		TargetCoors.y = 3.0f * Cos(Alpha) * Sin(Beta) + Source.y;
@@ -3023,6 +3038,10 @@ CCam::Process_Sniper(const CVector &CameraTarget, float TargetOrientation, float
 	while(Beta < -PI) Beta += 2*PI;
 	if(Alpha > DEGTORAD(60.0f)) Alpha = DEGTORAD(60.0f);
 	else if(Alpha < -DEGTORAD(89.5f)) Alpha = -DEGTORAD(89.5f);
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// VR head aim: the weapon camera follows the headset, not the stick.
+	androidgame::VrHeadAimCamera(&Beta, &Alpha);
+#endif
 
 	TargetCoors.x = 3.0f * Cos(Alpha) * Cos(Beta) + Source.x;
 	TargetCoors.y = 3.0f * Cos(Alpha) * Sin(Beta) + Source.y;

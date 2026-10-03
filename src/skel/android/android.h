@@ -224,6 +224,26 @@ float VrScopeZoomFactor(void);
 // In a vehicle the view is yaw-only unless this is on, when it inherits the
 // whole vehicle basis (vr_settings.ini [VR] VehicleFollowRotation).
 bool VrVehicleFollowRotation(void);
+// First person on foot, head modes: shots go where the head looks and the
+// sniper, M16 and rocket cameras follow the headset
+// (vr_settings.ini [VR] HeadAim, default on).
+bool VrHeadAimEnabled(void);
+
+// The engine's side of the head modes.
+// MOVEMENT DIRECTION HEAD / HEAD TURN (any view): the player ped walks the
+// stick's direction as asked instead of facing the camera and strafing. In
+// first person the stick has been turned by the head already.
+bool VrHeadMovementActive(void);
+// Head aim and the head-driven weapon cameras are first person on foot only;
+// everywhere else (third person, vehicles, cutscenes, the 3D screen) these
+// answer false and the stock camera and controls apply untouched.
+// The world direction the headset looks along, while head aim is in use.
+bool VrHeadAimDirection(float direction[3]);
+// The same as a ped heading (CPed::m_fRotationCur convention).
+bool VrHeadAimHeading(float *heading);
+// For the first person weapon cameras: turns beta/alpha (CCam angles, radians)
+// into the headset's own. False leaves them to the stock stick control.
+bool VrHeadAimCamera(float *beta, float *alpha);
 
 #if GTA3VR_WRIST_PANELS
 // Wrist panels: the minimap and the money/health/wanted readout, each on its

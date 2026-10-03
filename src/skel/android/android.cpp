@@ -534,6 +534,43 @@ bool gVrThirdPersonOnFoot;
 static CVector gVrChaseHoldHead;
 static CVector gVrChaseHoldForward;
 static bool gVrChaseHoldValid;
+
+// First person on foot with the head modes (MOVEMENT DIRECTION HEAD or HEAD
+// TURN): the anchor frame is the gameplay camera and the stick is turned by the
+// head. Set by VrUpdateFirstPersonAnchor.
+static bool gVrHeadModeOnFoot;
+// The same, with head aim switched on: shots go where the head looks, and the
+// weapon cameras follow the headset.
+static bool gVrHeadAimActive;
+// A weapon camera takes its Beta/Alpha from the headset. The headset's world
+// yaw is the anchor's heading plus its own turn, so if the anchor followed that
+// camera the view would spin up on its own. While one of these cameras is
+// active the anchor therefore holds the heading the view had when it started.
+static bool gVrScopeLatched;
+static CVector gVrScopeBaseForward;
+static CVector gVrLastAnchorForward;
+static bool gVrLastAnchorForwardValid;
+
+// The camera modes whose processors take Beta/Alpha from VrHeadAimCamera:
+// Process_Sniper, Process_Rocket, Process_M16_1stPerson and
+// Process_1rstPersonPedOnPC (the *_RUNABOUT modes and the PC first person).
+static bool
+IsHeadDrivenCameraMode(int mode)
+{
+	switch(mode){
+	case CCam::MODE_SNIPER:
+	case CCam::MODE_ROCKETLAUNCHER:
+	case CCam::MODE_M16_1STPERSON:
+	case CCam::MODE_HELICANNON_1STPERSON:
+	case CCam::MODE_SNIPER_RUNABOUT:
+	case CCam::MODE_ROCKETLAUNCHER_RUNABOUT:
+	case CCam::MODE_M16_1STPERSON_RUNABOUT:
+	case CCam::MODE_1STPERSON_RUNABOUT:
+	case CCam::MODE_FIGHT_CAM_RUNABOUT:
+		return true;
+	}
+	return false;
+}
 #endif
 
 // The shape of the cinema screen theater mode draws on. The game lays its
@@ -566,6 +603,54 @@ androidgame::VrGetViewBasis(float position[3], float right[3], float up[3],
 }
 
 #if MIAMIVR_STEAM_FRAME
+bool
+androidgame::VrHeadMovementActive(void)
+{
+	// The setting, in any view: first person has turned the stick by the head
+	// already, and in third person the stick is relative to the stock camera;
+	// either way the ped should walk the direction asked, as in the Vice City
+	// build, rather than face the camera and strafe.
+	return androidgame::VrUsesHeadRelativeMovement();
+}
+
+bool
+androidgame::VrHeadAimDirection(float direction[3])
+{
+	return gVrHeadAimActive &&
+		androidgame::VrGetViewBasis(nil, nil, nil, direction);
+}
+
+bool
+androidgame::VrHeadAimHeading(float *heading)
+{
+	float direction[3];
+	if(!androidgame::VrHeadAimDirection(direction))
+		return false;
+	if(direction[0]*direction[0]+direction[1]*direction[1] < 0.0001f)
+		return false;
+	// The ped's own convention: it faces (-sin, cos) of this angle.
+	*heading = Atan2(-direction[0], direction[1]);
+	return true;
+}
+
+bool
+androidgame::VrHeadAimCamera(float *beta, float *alpha)
+{
+	float direction[3];
+	if(!androidgame::VrHeadAimDirection(direction))
+		return false;
+	const float length = sqrtf(direction[0]*direction[0]+
+		direction[1]*direction[1]+direction[2]*direction[2]);
+	if(length < 0.5f)
+		return false;
+	// Beta/Alpha as the weapon camera processors build their Front:
+	// (cos(a)cos(b), cos(a)sin(b), sin(a)), with the limits they apply.
+	*beta = Atan2(direction[1], direction[0]);
+	*alpha = Clamp(Asin(Clamp(direction[2]/length, -1.0f, 1.0f)),
+		-DEGTORAD(89.5f), DEGTORAD(60.0f));
+	return true;
+}
+
 // THIRD: 3D SCREEN. Gameplay itself plays on the theater screen from the
 // stock camera, on foot and in vehicles. A remote-controlled vehicle counts:
 // its camera is the stock chase camera too and the screen is the steadier way
@@ -897,6 +982,11 @@ VrUpdateFirstPersonAnchor(bool postPhysics)
 	// pointer in PreRender, and a scene that ends without clearing it
 	// leaves whoever lands on that address walking around headless.
 	gCutsceneCameraActor = nil;
+#if MIAMIVR_STEAM_FRAME
+	gVrHeadModeOnFoot = false;
+	gVrHeadAimActive = false;
+	bool scopeFrame = false;
+#endif
 	CPlayerPed *player = FindPlayerPed();
 	const bool remoteMode =
 		CWorld::Players[CWorld::PlayerInFocus].IsPlayerInRemoteMode();
@@ -1050,6 +1140,37 @@ VrUpdateFirstPersonAnchor(bool postPhysics)
 			}
 		}
 #if MIAMIVR_STEAM_FRAME
+		gVrHeadModeOnFoot = headModeOnFoot;
+		gVrHeadAimActive = headModeOnFoot && androidgame::VrHeadAimEnabled();
+		if(gVrHeadAimActive && IsHeadDrivenCameraMode(
+		   TheCamera.Cams[TheCamera.ActiveCam].Mode)){
+			// A weapon camera driven by the headset: hold the anchor
+			// where the view was when it began (see gVrScopeLatched).
+			scopeFrame = true;
+			if(!gVrScopeLatched){
+				gVrScopeLatched = true;
+				gVrScopeBaseForward = gVrLastAnchorForwardValid ?
+					gVrLastAnchorForward : forward;
+				ALOG("[vr] weapon camera mode %d: head driven, anchor held "
+				     "at %.1f deg",
+				     (int)TheCamera.Cams[TheCamera.ActiveCam].Mode,
+				     RADTODEG(Atan2(gVrScopeBaseForward.y,
+				                    gVrScopeBaseForward.x)));
+			}
+			forward = gVrScopeBaseForward;
+		}else if(headModeOnFoot){
+			if(gVrScopeLatched){
+				// Back to the stock camera: relatch the anchor on its
+				// heading, which the weapon camera left on the headset's.
+				gVrScopeLatched = false;
+				androidgame::VrRecenterView();
+				ALOG("[vr] weapon camera over: anchor relatched");
+			}
+			gVrLastAnchorForward = forward;
+			gVrLastAnchorForwardValid = true;
+		}
+#endif
+#if MIAMIVR_STEAM_FRAME
 		if(thirdPersonHold)
 			forward = gVrChaseHoldForward;
 #endif
@@ -1200,6 +1321,19 @@ VrUpdateFirstPersonAnchor(bool postPhysics)
 	}else{
 		rw::vulkan::setFirstPersonAnchor(nil, 0.0f, 0, 0);
 	}
+#if MIAMIVR_STEAM_FRAME
+	if(!scopeFrame)
+		gVrScopeLatched = false;
+	// Say when the head modes switch, so a dump or a log can tell which
+	// controls the engine was running.
+	static int reportedHeadModes = -1;
+	const int headModes = (gVrHeadModeOnFoot ? 1 : 0)|(gVrHeadAimActive ? 2 : 0);
+	if(headModes != reportedHeadModes){
+		reportedHeadModes = headModes;
+		ALOG("[vr] head modes: head frame %s, head aim %s",
+		     gVrHeadModeOnFoot ? "on" : "off", gVrHeadAimActive ? "on" : "off");
+	}
+#endif
 }
 
 // XINPUT is off on this platform, so CPad routes through CapturePad. This is

@@ -92,6 +92,9 @@ static int gVrStickLookBehind;
 static int gVrStickCrouch;
 // In a vehicle the view inherits the vehicle's whole basis instead of yaw.
 static bool gVehicleFollowRotation;
+// First person on foot: shots go where the head looks, and the sniper, M16 and
+// rocket cameras follow the headset. vr_settings.ini [VR] HeadAim, no menu row.
+static bool gHeadAim = true;
 
 bool
 androidgame::VrStickLookBehindEnabled(void)
@@ -620,6 +623,8 @@ LoadVrSettings(void)
 	}
 	gVehicleFollowRotation = GetPrivateProfileIntA("VR",
 		"VehicleFollowRotation", 0, ".\\vr_settings.ini") != 0;
+	gHeadAim = GetPrivateProfileIntA("VR", "HeadAim", 1,
+		".\\vr_settings.ini") != 0;
 	gVrSettingsLoaded = true;
 }
 
@@ -2186,6 +2191,13 @@ VrVehicleFollowRotation(void)
 {
 	LoadVrSettings();
 	return gVehicleFollowRotation;
+}
+
+bool
+VrHeadAimEnabled(void)
+{
+	LoadVrSettings();
+	return gHeadAim;
 }
 
 }
