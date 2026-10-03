@@ -340,6 +340,9 @@ enum eVrLocomotionMenuItem {
 	VR_LOCOMOTION_SNAP_ANGLE,
 	VR_LOCOMOTION_HEAD_BOBBING,
 	VR_LOCOMOTION_CUTSCENES,
+#if MIAMIVR_STEAM_FRAME
+	VR_LOCOMOTION_VEHICLE_VIEW,
+#endif
 	VR_LOCOMOTION_REFRESH_RATE,
 	VR_LOCOMOTION_RECENTER,
 	VR_LOCOMOTION_BACK,
@@ -1371,6 +1374,13 @@ VrDebugUpdate(const PadInput &in)
 				gQuestHeadBobbing = !gQuestHeadBobbing;
 				SaveVrInteger("HeadBobbing", gQuestHeadBobbing);
 				break;
+#if MIAMIVR_STEAM_FRAME
+			case VR_LOCOMOTION_VEHICLE_VIEW:
+				gVehicleFollowRotation = !gVehicleFollowRotation;
+				SaveVrInteger("VehicleFollowRotation",
+					gVehicleFollowRotation ? 1 : 0);
+				break;
+#endif
 			case VR_LOCOMOTION_REFRESH_RATE: {
 				static const int rates[] = { 72, 80, 90, 120 };
 				const int count =
@@ -1769,13 +1779,18 @@ DrawQuestLocomotionPage(void)
 		"CUTSCENES  < %s >",
 		gCutsceneMode ? "STEREO  R3 CAMERA  L3 KEEP" : "CINEMA SCREEN");
 #endif
+#if MIAMIVR_STEAM_FRAME
+	snprintf(rows[VR_LOCOMOTION_VEHICLE_VIEW], sizeof(rows[0]),
+		"CAR VIEW  < %s >",
+		gVehicleFollowRotation ? "FOLLOWS TILT" : "LEVEL HORIZON");
+#endif
 	snprintf(rows[VR_LOCOMOTION_REFRESH_RATE], sizeof(rows[0]),
 		"REFRESH RATE  < %d HZ >", gQuestRefreshRateHz);
 	strcpy(rows[VR_LOCOMOTION_RECENTER], "RECENTER VIEW");
 	strcpy(rows[VR_LOCOMOTION_BACK], "BACK TO SETTINGS");
 #if MIAMIVR_STEAM_FRAME
-	// Ten rows: a tighter pitch, with the hint and footer pushed down.
-	const int rowPitch = 54, hintY = 704, footerY = 726;
+	// Eleven rows: a tighter pitch, with the hint and footer pushed down.
+	const int rowPitch = 48, hintY = 704, footerY = 726;
 #else
 	const int rowPitch = 68, hintY = 668, footerY = 718;
 #endif
@@ -1790,6 +1805,9 @@ DrawQuestLocomotionPage(void)
 #if MIAMIVR_STEAM_FRAME
 	else if(gVrLocomotionSelection == VR_LOCOMOTION_VIEW)
 		DrawVrMenuText("SHORT PRESS VIEW TO SWITCH IN PLAY",
+			VR_MENU_WIDTH/2, hintY, 2, 255, 205, 90);
+	else if(gVrLocomotionSelection == VR_LOCOMOTION_VEHICLE_VIEW)
+		DrawVrMenuText("FIRST PERSON ONLY - FOLLOWS PITCH AND ROLL",
 			VR_MENU_WIDTH/2, hintY, 2, 255, 205, 90);
 #endif
 	DrawVrMenuText(
