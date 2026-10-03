@@ -263,6 +263,15 @@ CStreaming::Init2(void)
 void
 CStreaming::Init(void)
 {
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// The PC builds a per-video-card TXD.IMG cache for cards that cannot
+	// sample the game's DXT textures. Vulkan on Adreno samples BC directly
+	// (Vice City guards the same path with CanVideoCardDoDXT), and the cache
+	// this backend wrote was unreadable ("Couldn't find chunk STRUCT" for
+	// every texture), so never build or read it.
+	CStreaming::Init2();
+	return;
+#endif
 #ifdef USE_TXD_CDIMAGE
 	int txdHandle = CFileMgr::OpenFile("MODELS\\TXD.IMG", "r");
 	if (txdHandle)
