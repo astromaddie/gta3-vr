@@ -225,6 +225,13 @@ char* casepath(char const* path, bool checkPathFirst)
     }
 
     bool cantProceed = false; // just convert slashes in what's left in string, don't correct case of letters(because we can't)
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+    // An Android app may not be allowed to enumerate "/", which is what a path
+    // starting with a separator asks for. Unchecked, the first readdir below
+    // runs on a null DIR*. Fall back to normalising separators only.
+    if (!d)
+        cantProceed = true;
+#endif
     bool mayBeTrailingSlash = false;
 
     while (c = strsep(&p, "/\\"))

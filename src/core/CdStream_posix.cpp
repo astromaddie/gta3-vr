@@ -15,6 +15,7 @@
 #include <sys/resource.h>
 #include <stdarg.h>
 #include <limits.h>
+#include <errno.h>
 
 #ifdef __linux__
 #include <sys/syscall.h>
@@ -28,6 +29,13 @@
 
 #ifdef FLUSHABLE_STREAMING
 bool flushStream[MAX_CDCHANNELS];
+#endif
+
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+// Bionic has no named POSIX semaphores: sem_open always fails with ENOSYS.
+// The unnamed path below already exists for platforms in the same position,
+// and these streaming semaphores are process-local anyway.
+#define USE_UNNAMED_SEM
 #endif
 
 #ifdef USE_UNNAMED_SEM
@@ -99,7 +107,11 @@ struct CdReadInfo
 	int32 hFile;
 };
 
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+char gCdImageNames[MAX_CDIMAGES+1][1024];
+#else
 char gCdImageNames[MAX_CDIMAGES+1][64];
+#endif
 int32 gNumImages;
 int32 gNumChannels;
 
@@ -206,9 +218,13 @@ CdStreamInit(int32 numChannels)
 		ASSERT(0);
 		return;
 	}
-#ifdef __linux__
+#if defined(__linux__) && !(defined(RW_VULKAN) && defined(__ANDROID__))
 	_gdwCdStreamFlags = O_RDONLY | O_NOATIME;
 #else
+	// Android defines __linux__, but O_NOATIME is only permitted to a file's
+	// owner: data staged over adb or rsync belongs to another user, so every
+	// open of an IMG would fail with EPERM. The flag is only an access-time
+	// optimisation.
 	_gdwCdStreamFlags = O_RDONLY;
 #endif
 	// People say it's slower
@@ -552,9 +568,22 @@ CdStreamAddImage(char const *path)
 	}
 
 	if ( gImgFiles[gNumImages] == -1 ) {
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+		// The paths are relative, so a failure here is almost always the
+		// working directory rather than a missing file: say where we stood.
+		char cwd[512];
+		if(getcwd(cwd, sizeof(cwd)) == nil)
+			strcpy(cwd, "(unknown)");
+		CDTRACE("cannot open image '%s' (errno %d), cwd '%s'", path, errno, cwd);
+#else
 		assert(false);
+#endif
 		return false;
 	}
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	if(strlen(path) >= sizeof(gCdImageNames[0]))
+		return false;
+#endif
 
 	gImgNames[gNumImages] = strdup(path);
 	gImgFiles[gNumImages]++; // because -1: error 0: not used

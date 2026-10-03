@@ -61,7 +61,13 @@ enum Config {
 
 	// Link list lengths
 	NUMALPHALIST = 20,
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// Every entity inside its fade band renders only through this sorted list;
+	// a full list silently drops the entity for the frame.
+	NUMALPHAENTITYLIST = 2048,
+#else
 	NUMALPHAENTITYLIST = 150,
+#endif
 	NUMCOLCACHELINKS = 200,
 	NUMREFERENCES = 800,
 
@@ -123,7 +129,13 @@ enum Config {
 
 	NUMROADBLOCKS = 600,
 
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// The all-round VR scan with whole-map residency can exceed the stock
+	// count; overflow silently drops the last-scanned entities.
+	NUMVISIBLEENTITIES = 9000,
+#else
 	NUMVISIBLEENTITIES = 2000,
+#endif
 	NUMINVISIBLEENTITIES = 150,
 
 	NUM_AUDIOENTITY_EVENTS = 4,
@@ -312,10 +324,15 @@ enum Config {
 #define ANISOTROPIC_FILTERING	// set all textures to max anisotropic filtering
 //#define USE_TEXTURE_POOL
 #ifdef LIBRW
+#if !(defined(RW_VULKAN) && defined(__ANDROID__))
+// Each needs a per-backend implementation (custompipes has d3d9/gl variants and
+// no Vulkan one), and EXTENDED_COLOURFILTER redraws the camera raster as a
+// full-screen Im2D quad, which lands on the floating 2D panel in a headset.
 #define EXTENDED_COLOURFILTER		// more options for colour filter (replaces mblur)
 #define EXTENDED_PIPELINES		// custom render pipelines (includes Neo)
 #define SCREEN_DROPLETS			// neo water droplets
 #define NEW_RENDERER		// leeds-like world rendering, needs librw
+#endif
 #endif
 
 #define FIX_SPRITES	// fix sprites aspect ratio(moon, coronas, particle etc)

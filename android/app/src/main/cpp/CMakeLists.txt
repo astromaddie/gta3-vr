@@ -162,9 +162,11 @@ set(MIAMIVR_SOURCES
 if(NOT MIAMIVR_BRINGUP)
 	message(STATUS "gta3vr: full game build selected")
 
+	# re3 (GTA III) keeps the renderer in src/renderer; every other directory
+	# is the same set Vice City builds, plus the Android skeleton.
 	set(GAME_DIRS
 		animation audio buildings collision control core entities extras
-		fakerw math modelinfo objects peds render rw save skel skel/android
+		fakerw math modelinfo objects peds renderer rw save skel skel/android
 		text vehicles weapons)
 
 	set(GAME_SOURCES "")
@@ -172,43 +174,22 @@ if(NOT MIAMIVR_BRINGUP)
 		file(GLOB _dir_sources "${RE3_ROOT}/src/${d}/*.cpp")
 		list(APPEND GAME_SOURCES ${_dir_sources})
 	endforeach()
-	# Keep this explicit because file(GLOB) does not cause an already configured
-	# Ninja graph to notice a newly added source file.
-	set(QUEST_PROFILER_SOURCE
-		"${RE3_ROOT}/src/skel/android/QuestProfiler.cpp")
-	list(REMOVE_ITEM GAME_SOURCES "${QUEST_PROFILER_SOURCE}")
-	list(APPEND GAME_SOURCES "${QUEST_PROFILER_SOURCE}")
-	# Like QuestProfiler, keep the newly introduced source explicit so an
-	# already-configured Ninja graph notices it immediately.
-	set(PHYSICS_DIRECTOR_SOURCE
-		"${RE3_ROOT}/src/vehicles/PhysicsDirector.cpp")
-	list(REMOVE_ITEM GAME_SOURCES "${PHYSICS_DIRECTOR_SOURCE}")
-	list(APPEND GAME_SOURCES "${PHYSICS_DIRECTOR_SOURCE}")
-	set(VEHICLE_VISUAL_DIRECTOR_SOURCE
-		"${RE3_ROOT}/src/vehicles/VehicleVisualDirector.cpp")
-	list(REMOVE_ITEM GAME_SOURCES "${VEHICLE_VISUAL_DIRECTOR_SOURCE}")
-	list(APPEND GAME_SOURCES "${VEHICLE_VISUAL_DIRECTOR_SOURCE}")
-	set(VEHICLE_DEFORMATION_SOURCE
-		"${RE3_ROOT}/src/vehicles/VehicleDeformation.cpp")
-	list(REMOVE_ITEM GAME_SOURCES "${VEHICLE_DEFORMATION_SOURCE}")
-	list(APPEND GAME_SOURCES "${VEHICLE_DEFORMATION_SOURCE}")
-	# Exclude the tool translation unit entirely in player builds. The header
-	# still provides constant-false/no-op entry points for defensive callers.
-	set(VR_CULL_VIZ_SOURCE "${RE3_ROOT}/src/render/VrCullViz.cpp")
-	list(REMOVE_ITEM GAME_SOURCES "${VR_CULL_VIZ_SOURCE}")
-	if(MIAMIVR_DEV_TOOLS)
-		list(APPEND GAME_SOURCES "${VR_CULL_VIZ_SOURCE}")
-	endif()
 
-	# Quest audio uses a native AAudio SFX mixer and the Android platform
-	# decoder for long radio/cutscene streams.  The desktop OpenAL/Miles
-	# backends carry host-only libraries and are deliberately not linked.
+	# Platform skeleton and CD stream: the Android skeleton replaces win/glfw,
+	# and CdStream_posix.cpp replaces the Win32 stream (src/core/*.cpp is
+	# globbed, so the Windows one has to be taken out).
+	list(REMOVE_ITEM GAME_SOURCES "${RE3_ROOT}/src/core/CdStream_win.cpp")
+
+	# Android audio uses a native AAudio SFX mixer and the Android platform
+	# decoder for long radio/cutscene streams (src/audio/sampman_android.cpp).
+	# The desktop OpenAL/Miles backends carry host-only libraries and are
+	# deliberately not linked; sampman_null.cpp steps aside via AUDIO_ANDROID.
 	list(REMOVE_ITEM GAME_SOURCES
 		"${RE3_ROOT}/src/audio/sampman_oal.cpp"
 		"${RE3_ROOT}/src/audio/sampman_miles.cpp")
 
 	# GitSHA1.cpp is generated, not committed; the desktop build makes it with
-	# printHash.bat as a prebuild step.
+	# CMake's configure_file too.
 	execute_process(
 		COMMAND git rev-parse HEAD
 		WORKING_DIRECTORY "${RE3_ROOT}"
@@ -221,21 +202,13 @@ if(NOT MIAMIVR_BRINGUP)
 	configure_file("${RE3_ROOT}/src/extras/GitSHA1.cpp.in"
 	               "${CMAKE_CURRENT_BINARY_DIR}/GitSHA1.cpp" @ONLY)
 	list(APPEND GAME_SOURCES "${CMAKE_CURRENT_BINARY_DIR}/GitSHA1.cpp")
-	# Native Quest hands share the authored UltimateXR mesh loader with the
-	# desktop VR build. QuestWeaponVR is the Android input/interaction adapter;
-	# it deliberately does not own another OpenXR session or stereo renderer.
-	list(APPEND GAME_SOURCES
-		"${RE3_ROOT}/src/vr/VRHandModel.cpp"
-		"${RE3_ROOT}/src/vr/QuestDrivingVR.cpp"
-		"${RE3_ROOT}/src/vr/QuestWeaponVR.cpp")
 
 	list(APPEND MIAMIVR_SOURCES ${GAME_SOURCES})
 
 	foreach(d ${GAME_DIRS} "")
 		list(APPEND GAME_INCLUDES "${RE3_ROOT}/src/${d}")
 	endforeach()
-	list(APPEND GAME_INCLUDES "${RE3_ROOT}/src" "${RE3_ROOT}/src/audio/oal"
-	                         "${RE3_ROOT}/src/vr")
+	list(APPEND GAME_INCLUDES "${RE3_ROOT}/src")
 	# The skeleton reaches into the app layer for the storage roots.
 	list(APPEND GAME_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}")
 endif()
@@ -271,7 +244,11 @@ target_compile_definitions(gta3vr PRIVATE
 
 if(NOT MIAMIVR_BRINGUP)
 	target_compile_definitions(gta3vr PRIVATE
-		LIBRW RW_VULKAN AUDIO_ANDROID GTA_VR_WEAPONS)
+		LIBRW RW_VULKAN AUDIO_ANDROID CMAKE_BUILD USE_OUR_VERSIONING
+		GTA3VR_WRIST_PANELS=0)
+	# The PS2-era engine relies on plain char being signed; arm64 Android's
+	# default is unsigned.
+	target_compile_options(gta3vr PRIVATE -fsigned-char)
 	# 2003-era C++ read by a 2024 clang. These are style diagnostics, not
 	# defects, and at this volume they bury the errors that matter.
 	target_compile_options(gta3vr PRIVATE
@@ -281,6 +258,19 @@ if(NOT MIAMIVR_BRINGUP)
 		-Wno-parentheses
 		-Wno-switch
 		-Wno-format-security)
+
+	# The files this port adds are held to -Wall; the re3 sources it builds
+	# from are left as they are.
+	set(GTA3VR_OWN_SOURCES
+		"${CMAKE_CURRENT_SOURCE_DIR}/android_main.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/platform_android.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/frame_diag.cpp"
+		"${RE3_ROOT}/src/skel/android/android.cpp"
+		"${RE3_ROOT}/src/skel/android/vrmenu.cpp"
+		"${RE3_ROOT}/src/skel/android/QuestProfiler.cpp"
+		"${RE3_ROOT}/src/audio/sampman_android.cpp")
+	set_source_files_properties(${GTA3VR_OWN_SOURCES} PROPERTIES
+		COMPILE_OPTIONS "-Wall;-Wno-unknown-pragmas;-Wno-unused-private-field")
 endif()
 
 if(MIAMIVR_BRINGUP)

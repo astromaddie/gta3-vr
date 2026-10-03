@@ -106,7 +106,9 @@ class CControllerState;
 
 #define ACTIONNAME_LENGTH 40
 
-#ifdef RW_GL3
+// Despite the name this struct holds no GLFW types, so the Android build uses
+// it too instead of the DirectInput state below.
+#if defined RW_GL3 || (defined(RW_VULKAN) && defined(__ANDROID__))
 struct GlfwJoyState {
 	int8 id;
 	bool isGamepad;
@@ -132,7 +134,7 @@ public:
 	};
 
 	bool                  m_bFirstCapture;
-#if defined RW_GL3
+#if defined RW_GL3 || (defined(RW_VULKAN) && defined(__ANDROID__))
 	GlfwJoyState           m_OldState;
 	GlfwJoyState           m_NewState;
 #else

@@ -71,6 +71,12 @@ public:
 	static void Init(void);
 	static void Shutdown(void);
 	static void PreRender(void);
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// Where the headset's eyes are this frame, in world space. Stage 1 only
+	// records it; the all-round VR culling (T5) reads it.
+	static void SetVrViewCameraPosition(const CVector &position);
+	static CVector ms_vrViewCameraPosition;
+#endif
 
 	static void RenderRoads(void);
 	static void RenderFadingInEntities(void);

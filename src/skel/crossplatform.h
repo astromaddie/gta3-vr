@@ -77,6 +77,28 @@ void CapturePad(RwInt32 padID);
 void joysChangeCB(int jid, int event);
 #endif
 
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+// Android/Steam Frame. There is no desktop window and no mouse; all input
+// arrives through OpenXR actions. The mouse and joystick fields are kept so the
+// shared front-end and pad code still compiles unchanged.
+typedef struct
+{
+    RwBool		fullScreen;
+    RwV2d		lastMousePos;
+    double      mouseWheel;
+    bool        cursorIsInWindow;
+    RwInt8        joy1id;
+    RwInt8        joy2id;
+}
+psGlobalType;
+
+#define PSGLOBAL(var) (((psGlobalType *)(RsGlobal.ps))->var)
+
+// The Android skeleton supplies it: controller state is written into the pad
+// from the OpenXR action set.
+void CapturePad(RwInt32 padID);
+#endif
+
 #ifdef DETECT_JOYSTICK_MENU
 extern char gSelectedJoystickName[128];
 #endif

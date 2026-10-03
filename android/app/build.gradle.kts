@@ -61,7 +61,7 @@ android {
 					// Passed explicitly: CMake's option() caches its value, so
 					// editing the default in CMakeLists.txt does not change an
 					// already-configured build tree.
-					"-DMIAMIVR_BRINGUP=ON",
+					"-DMIAMIVR_BRINGUP=OFF",
 					"-DMIAMIVR_DEV_TOOLS=${if (devTools) "ON" else "OFF"}",
 					// Native optimization is independent of APK debuggability.
 					"-DCMAKE_BUILD_TYPE=RelWithDebInfo",

@@ -304,7 +304,25 @@ RwBool rwNativeTextureHackRead(RwStream *stream, RwTexture **tex, RwInt32 size)
 {
 	*tex = Texture::streamReadNative(stream);
 #ifdef LIBRW
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// A TXD entry can fail to read or convert; report it instead of
+	// dereferencing a nil raster.
+	if(*tex == nil || (*tex)->raster == nil){
+		if(*tex)
+			(*tex)->destroy();
+		*tex = nil;
+		return false;
+	}
+	rw::Raster *converted = rw::Raster::convertTexToCurrentPlatform((*tex)->raster);
+	if(converted == nil){
+		(*tex)->destroy();
+		*tex = nil;
+		return false;
+	}
+	(*tex)->raster = converted;
+#else
 	(*tex)->raster = rw::Raster::convertTexToCurrentPlatform((*tex)->raster);
+#endif
 #endif
 	return *tex != nil;
 }

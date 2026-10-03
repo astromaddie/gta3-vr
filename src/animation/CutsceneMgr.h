@@ -33,6 +33,10 @@ public:
 	static bool IsCutsceneProcessing(void) { return ms_cutsceneProcessing; }
 	static bool UseLodMultiplier(void) { return ms_useLodMultiplier; }
 	static CCutsceneObject* GetCutsceneObject(int id) { return ms_pCutsceneObjects[id]; }
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// The VR cinema camera steps through the staged actors.
+	static int GetNumCutsceneObjects(void) { return ms_numCutsceneObjs; }
+#endif
 	static int GetCutsceneTimeInMilleseconds(void) { return 1000.0f * ms_cutsceneTimer; }
 	static char *GetCutsceneName(void) { return ms_cutsceneName; }
 	static void SetCutsceneOffset(const CVector& vec) { ms_cutsceneOffset = vec; }

@@ -93,6 +93,17 @@ BlockedRange CRenderer::aBlockedRanges[16];
 BlockedRange *CRenderer::pFullBlockedRanges;
 BlockedRange *CRenderer::pEmptyBlockedRanges;
 
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+CVector CRenderer::ms_vrViewCameraPosition;
+
+// STUB (T3): the culling hooks that consume this are T5.
+void
+CRenderer::SetVrViewCameraPosition(const CVector &position)
+{
+	ms_vrViewCameraPosition = position;
+}
+#endif
+
 void
 CRenderer::Init(void)
 {

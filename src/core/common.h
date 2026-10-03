@@ -295,6 +295,16 @@ extern int strcasecmp(const char *str1, const char *str2);
 
 extern wchar *AllocUnicode(const char*src);
 
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+// Stall diagnostics. A checkpoint is a single relaxed pointer store, cheap
+// enough to leave in a hot path; a watchdog thread reports it only when it
+// stops changing. Nothing on other platforms.
+namespace platform { void setCheckpoint(const char *label); }
+#define RE3_CHECKPOINT(label) platform::setCheckpoint(label)
+#else
+#define RE3_CHECKPOINT(label) do {} while(0)
+#endif
+
 #define Clamp(v, low, high) ((v)<(low) ? (low) : (v)>(high) ? (high) : (v))
 
 #define Clamp2(v, center, radius) ((v) > (center) ? Min(v, center + radius) : Max(v, center - radius))

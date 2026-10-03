@@ -5132,14 +5132,14 @@ CMenuManager::ProcessButtonPresses(void)
 						ControlsManager.MakeControllerActionsBlank();
 						ControlsManager.InitDefaultControlConfiguration();
 						ControlsManager.InitDefaultControlConfigMouse(MousePointerStateHelper.GetMouseSetUp());
-#if !defined RW_GL3
+#if !defined RW_GL3 && !(defined(RW_VULKAN) && defined(__ANDROID__))
 						if (AllValidWinJoys.m_aJoys[JOYSTICK1].m_bInitialised) {
 							DIDEVCAPS devCaps;
 							devCaps.dwSize = sizeof(DIDEVCAPS);
 							PSGLOBAL(joy1)->GetCapabilities(&devCaps);
 							ControlsManager.InitDefaultControlConfigJoyPad(devCaps.dwButtons);
 						}
-#else
+#elif !(defined(RW_VULKAN) && defined(__ANDROID__))
 						if (PSGLOBAL(joy1id) != -1 && glfwJoystickPresent(PSGLOBAL(joy1id))) {
 							int count;
 							glfwGetJoystickButtons(PSGLOBAL(joy1id), &count);

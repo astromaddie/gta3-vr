@@ -244,6 +244,15 @@ CGame::InitialiseRenderWare(void)
 #endif
 
 #ifdef LIBRW
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// The Vulkan librw fork folds the old envMapApplyLight/UseMatColor/FlipU
+	// switches into one modulate flag.
+#ifdef PS2_MATFX
+	rw::MatFX::modulateEnvMap = true;
+#else
+	rw::MatFX::modulateEnvMap = false;
+#endif
+#else
 #ifdef PS2_MATFX
 	rw::MatFX::envMapApplyLight = true;
 	rw::MatFX::envMapUseMatColor = true;
@@ -255,6 +264,7 @@ CGame::InitialiseRenderWare(void)
 #endif
 	rw::RGBA envcol = { 128, 128, 128, 255 };
 	rw::MatFX::envMapColor = envcol;
+#endif
 #else
 #ifdef PS2_MATFX
 	ReplaceMatFxCallback();

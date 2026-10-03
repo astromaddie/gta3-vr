@@ -146,9 +146,22 @@ CTxdStore::LoadTxd(int slot, const char *filename)
 #ifdef GTA_PC
 	_rwD3D8TexDictionaryEnableRasterFormatConversion(true);
 #endif
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// Upstream retries forever, assuming a failed open is transient. Against
+	// staged game data one unreadable file turns that into a silent hang at
+	// full CPU. Bound it, and say which file failed.
+	stream = nil;
+	for(int attempt = 0; attempt < 16 && stream == nil; attempt++)
+		stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, filename);
+	if(stream == nil){
+		printf("Failed to open TXD '%s' for slot %d\n", filename, slot);
+		return false;
+	}
+#else
 	do
 		stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, filename);
 	while(stream == nil);
+#endif
 	ret = LoadTxd(slot, stream);
 	RwStreamClose(stream, nil);
 	return ret;
