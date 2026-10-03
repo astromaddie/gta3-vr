@@ -553,9 +553,9 @@ isRadarTileName(const char *name)
 }
 
 static void
-logRadarTile(const char *name, int32 width, int32 height, int32 format,
-             int32 numLevels, int32 compression, int32 hasAlpha,
-             const Image *img)
+logRadarTile(const char *name, int32 width, int32 height, int32 depth,
+             int32 format, int32 numLevels, int32 compression, int32 hasAlpha,
+             uint32 size, const uint8 *raw, const Image *img)
 {
 	uint32 transparent = 0, opaque = 0, colours = 0;
 	uint32 seen[8] = { 0 };
@@ -580,11 +580,22 @@ logRadarTile(const char *name, int32 width, int32 height, int32 format,
 			}
 		}
 	}
-	printf("[radar] %s %dx%d format=0x%x levels=%d dxt=%d streamHasAlpha=%d "
+	printf("[radar] %s %dx%d depth=%d format=0x%x levels=%d dxt=%d "
+	       "streamHasAlpha=%d level0Size=%u (w*h*4=%d) "
 	       "texels: alpha0=%u alpha255=%u distinctRGB=%u first=%06x,%06x,%06x\n",
-	       name, width, height, (unsigned)format, numLevels, compression,
-	       hasAlpha, transparent, opaque, colours,
+	       name, width, height, depth, (unsigned)format, numLevels, compression,
+	       hasAlpha, size, width*height*4, transparent, opaque, colours,
 	       seen[0], seen[1], seen[2]);
+	if(raw != nil && size >= 32)
+		printf("[radar] %s raw bytes: %02x%02x%02x%02x %02x%02x%02x%02x "
+		       "%02x%02x%02x%02x %02x%02x%02x%02x | %02x%02x%02x%02x "
+		       "%02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x\n", name,
+		       raw[0],raw[1],raw[2],raw[3],raw[4],raw[5],raw[6],raw[7],
+		       raw[8],raw[9],raw[10],raw[11],raw[12],raw[13],raw[14],raw[15],
+		       raw[size/2],raw[size/2+1],raw[size/2+2],raw[size/2+3],
+		       raw[size/2+4],raw[size/2+5],raw[size/2+6],raw[size/2+7],
+		       raw[size/2+8],raw[size/2+9],raw[size/2+10],raw[size/2+11],
+		       raw[size/2+12],raw[size/2+13],raw[size/2+14],raw[size/2+15]);
 }
 #endif
 
@@ -678,8 +689,9 @@ readAsImageAnyFormat(const char *name, Stream *stream, int32 width, int32 height
 				hasAlpha, data, used, levelSizes, chainLevels);
 			if(ras != nil){
 				if(isRadarTileName(name))
-					logRadarTile(name, width, height, format, numLevels,
-					             compression, hasAlpha, nil);
+					logRadarTile(name, width, height, depth, format,
+					             numLevels, compression, hasAlpha, size,
+					             data, nil);
 				rwFree(data);
 				continue;
 			}
@@ -766,13 +778,12 @@ readAsImageAnyFormat(const char *name, Stream *stream, int32 width, int32 height
 				pixels += img->stride;
 			}
 		}
-		rwFree(data);
-
 #ifdef RW_VULKAN
 		if(isRadarTileName(name))
-			logRadarTile(name, width, height, format, numLevels,
-			             compression, hasAlpha, img);
+			logRadarTile(name, width, height, depth, format, numLevels,
+			             compression, hasAlpha, size, data, img);
 #endif
+		rwFree(data);
 
 		int32 newWidth, newHeight, newDepth, newFormat;
 		Raster::imageFindRasterFormat(img, Raster::TEXTURE,

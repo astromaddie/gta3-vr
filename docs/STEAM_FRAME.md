@@ -215,8 +215,8 @@ tools/steam_frame/tests/check_bindings.py       # host test for the controller b
 
 Log tags are `GTA3VR`, `GTA3VR-game` and `librw-vk`. The lines this port adds
 start with `[vr]`, `[vr-perf]` and `[vr-dump]`. Each radar tile that streams in
-logs one `[radar]` line (size, format, whether the TXD says it has alpha, how
-many texels have alpha 0, a few of its colours), which says what the minimap is
+logs one `[radar]` line (size, depth, format, whether the TXD says it has alpha, how
+many texels have alpha 0, how many distinct colours, and a few raw bytes), which says what the minimap is
 being drawn from; add `radar` to the grep in a run script to see them. `vr-state.txt` says whether the
 dumped frame was a theater frame (menu, cutscene, 3D screen) or a stereo one.
 
@@ -233,5 +233,5 @@ Short version. The full table is in VR_ARCHITECTURE.md.
 | The APK builds (`com.gta3vr.frame`, minSdk 30), the bindings test passes | host |
 | Boots to the frontend at 72 fps, starts a new game, the opening cutscene shows in 3D cinema, first-person stereo gameplay renders (world, HUD, radar, coronas) | Frame, nobody wearing it |
 | Third person (both styles), head-relative movement, head aim, scope cameras, CAR VIEW | builds, not run |
-| Minimap shows the whole map (roads, sea) after the tile alpha-test fix; the in-car layout and the held view riding with the car | builds, not run |
+| Minimap shows the map after the tile blending fix; the in-car layout and the held view riding with the car | builds, not run |
 | Menus, boats, audio, comfort, performance with traffic | not tried |
