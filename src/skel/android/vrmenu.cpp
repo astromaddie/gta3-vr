@@ -84,10 +84,10 @@ static int gDebugFps;
 static double gDebugPreviousFrameMs;
 static float gDebugSmoothedFrameMs;
 static bool gTouchRecenterShortcutDown;
-// A pad looks behind on R3 and crouches on L3. Both are off in VR: the view
-// is the player's own head, so looking behind turns the world around him, and
-// a crouch fires from the same click that recenters. CONTROLS hands back
-// either one for anyone who wants it.
+// A pad looks behind on R3. That is off on foot in first person in VR: the view
+// is the player's own head, so looking behind turns the world around him.
+// CONTROLS hands it back for anyone who wants it. (GTA III has no crouch, so
+// the Vice City crouch row and its setting do nothing here.)
 static int gVrStickLookBehind;
 static int gVrStickCrouch;
 // In a vehicle the view inherits the vehicle's whole basis instead of yaw.
@@ -365,7 +365,6 @@ enum eVrControlsMenuItem {
 	VR_CONTROLS_LEFT_STICK_CLICK,
 	VR_CONTROLS_RIGHT_STICK_CLICK,
 	VR_CONTROLS_LOOK_BEHIND,
-	VR_CONTROLS_CROUCH,
 	VR_CONTROLS_RESET,
 	VR_CONTROLS_BACK,
 	VR_CONTROLS_ITEM_COUNT
@@ -1447,9 +1446,6 @@ VrDebugUpdate(const PadInput &in)
 			}else if(gVrControlsSelection == VR_CONTROLS_LOOK_BEHIND){
 				gVrStickLookBehind = !gVrStickLookBehind;
 				SaveVrInteger("StickLookBehind", gVrStickLookBehind);
-			}else if(gVrControlsSelection == VR_CONTROLS_CROUCH){
-				gVrStickCrouch = !gVrStickCrouch;
-				SaveVrInteger("StickCrouch", gVrStickCrouch);
 			}else if(gVrControlsSelection == VR_CONTROLS_RESET){
 				ApplyControlsLayout(kVrPadBindingDefault);
 			}else if(gVrControlsSelection == VR_CONTROLS_BACK){
@@ -1840,8 +1836,6 @@ DrawQuestControlsPage(void)
 	}
 	snprintf(rows[VR_CONTROLS_LOOK_BEHIND], sizeof(rows[0]),
 		"R3 LOOKS BEHIND  < %s >", gVrStickLookBehind ? "ON" : "OFF");
-	snprintf(rows[VR_CONTROLS_CROUCH], sizeof(rows[0]),
-		"L3 CROUCHES  < %s >", gVrStickCrouch ? "ON" : "OFF");
 	strcpy(rows[VR_CONTROLS_RESET], "RESET TO DEFAULTS");
 	strcpy(rows[VR_CONTROLS_BACK], "BACK TO SETTINGS");
 	for(int item = 0; item < VR_CONTROLS_ITEM_COUNT; item++)

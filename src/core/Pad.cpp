@@ -31,6 +31,9 @@
 #include "Replay.h"
 #include "Weather.h"
 #include "Streaming.h"
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+#include "../skel/android/android.h"
+#endif
 #include "PathFind.h"
 #include "Wanted.h"
 #include "General.h"
@@ -1827,6 +1830,15 @@ bool CPad::GetLookBehindForPed(void)
 {
 	if ( ArePlayerControlsDisabled() )
 		return false;
+
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// Looking behind swings the follow camera, and on foot in VR the view is
+	// the player's own head: the world would turn around a standing player
+	// rather than the camera turning behind him. CONTROLS hands it back.
+	if ( androidgame::VrFirstPersonOnFoot() &&
+	     !androidgame::VrStickLookBehindEnabled() )
+		return false;
+#endif
 
 	return !!NewState.RightShock;
 }

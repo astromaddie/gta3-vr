@@ -300,11 +300,13 @@ bool VrGetViewBasis(float position[3], float right[3], float up[3],
 // this runs.
 void VrRecenterView(void);
 
-// A pad looks behind on R3 and crouches on L3. Both are off on foot in VR,
-// where the view is the player's own head and the two clicks recenter it
-// instead; the CONTROLS page hands either behaviour back.
+// A pad looks behind on R3. That is off on foot in first person in VR, where
+// the view is the player's own head; the CONTROLS page hands it back. GTA III
+// has no crouch, so VrStickCrouchEnabled has no reader.
 bool VrStickLookBehindEnabled(void);
 bool VrStickCrouchEnabled(void);
+// First person on foot and playing: the stock camera is not the view.
+bool VrFirstPersonOnFoot(void);
 float VrTheaterAspectRatio(void);
 
 // One iteration of the game's gGameState machine, including rsIDLE. Must be

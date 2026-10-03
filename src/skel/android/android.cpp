@@ -539,6 +539,8 @@ static bool gVrChaseHoldValid;
 // TURN): the anchor frame is the gameplay camera and the stick is turned by the
 // head. Set by VrUpdateFirstPersonAnchor.
 static bool gVrHeadModeOnFoot;
+// First person on foot, whichever movement direction is chosen.
+static bool gVrFirstPersonWalking;
 // The same, with head aim switched on: shots go where the head looks, and the
 // weapon cameras follow the headset.
 static bool gVrHeadAimActive;
@@ -603,6 +605,12 @@ androidgame::VrGetViewBasis(float position[3], float right[3], float up[3],
 }
 
 #if MIAMIVR_STEAM_FRAME
+bool
+androidgame::VrFirstPersonOnFoot(void)
+{
+	return gVrFirstPersonWalking;
+}
+
 bool
 androidgame::VrHeadMovementActive(void)
 {
@@ -985,6 +993,7 @@ VrUpdateFirstPersonAnchor(bool postPhysics)
 #if MIAMIVR_STEAM_FRAME
 	gVrHeadModeOnFoot = false;
 	gVrHeadAimActive = false;
+	gVrFirstPersonWalking = false;
 	bool scopeFrame = false;
 #endif
 	CPlayerPed *player = FindPlayerPed();
@@ -1140,6 +1149,8 @@ VrUpdateFirstPersonAnchor(bool postPhysics)
 			}
 		}
 #if MIAMIVR_STEAM_FRAME
+		gVrFirstPersonWalking = !gVrInVehicle && !thirdPersonVehicle &&
+			!thirdPersonOnFoot && !thirdPersonHold && !vehicleTransition;
 		gVrHeadModeOnFoot = headModeOnFoot;
 		gVrHeadAimActive = headModeOnFoot && androidgame::VrHeadAimEnabled();
 		if(gVrHeadAimActive && IsHeadDrivenCameraMode(
