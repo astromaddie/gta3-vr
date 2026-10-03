@@ -571,6 +571,12 @@ bool LoadINISettings()
 	CCarCtrl::MaxNumberOfCarsInUse = DEFAULT_MAX_NUMBER_OF_CARS * CIniFile::CarNumberMultiplier;
 #endif
 
+#if defined(RW_VULKAN) && defined(__ANDROID__) && defined(NO_ISLAND_LOADING)
+	// Force full island residency whatever an older ini stored: it removes the
+	// island-transition purge and its blocking load.
+	FrontEndMenuManager.m_PrefsIslandLoading = CMenuManager::ISLAND_LOADING_HIGH;
+#endif
+
 	return true;
 }
 

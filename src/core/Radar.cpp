@@ -425,6 +425,79 @@ int CRadar::ClipRadarPoly(CVector2D *poly, const CVector2D *rect)
 }
 #endif
 
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+// The original radar draws an invisible depth-writing fan around the map and
+// then draws the square map tiles with a strict depth test. That trick fails
+// under Adreno multiview: the tiles fail the test everywhere, leaving only the
+// border and blips. Clip the tile geometry itself to the same 24-sided circle.
+//
+// ClipRadarPoly has already clipped the tile to the [-1, 1] radar square. A
+// convex polygon clipped against 24 edges gains at most one vertex per edge,
+// so 40 vertices cover the 8 + 24 maximum.
+static int
+ClipRadarPolyToCircle(CVector2D *poly, int count)
+{
+	const int NUM_CIRCLE_SEGMENTS = 24;
+	const int MAX_RADAR_VERTICES = 40;
+	const float edgeDistance = Cos(PI / NUM_CIRCLE_SEGMENTS);
+	CVector2D buffers[2][MAX_RADAR_VERTICES];
+
+	if (count < 3)
+		return 0;
+	if (count > MAX_RADAR_VERTICES)
+		count = MAX_RADAR_VERTICES;
+
+	for (int i = 0; i < count; i++)
+		buffers[0][i] = poly[i];
+
+	int sourceBuffer = 0;
+	int sourceCount = count;
+	for (int edge = 0; edge < NUM_CIRCLE_SEGMENTS && sourceCount >= 3; edge++) {
+		CVector2D *source = buffers[sourceBuffer];
+		CVector2D *destination = buffers[1 - sourceBuffer];
+		const float angle = (edge + 0.5f) * TWOPI / NUM_CIRCLE_SEGMENTS;
+		const float normalX = Cos(angle);
+		const float normalY = Sin(angle);
+		int destinationCount = 0;
+
+		CVector2D previous = source[sourceCount - 1];
+		float previousDistance = previous.x * normalX + previous.y * normalY;
+		bool previousInside = previousDistance <= edgeDistance;
+
+		for (int i = 0; i < sourceCount; i++) {
+			const CVector2D current = source[i];
+			const float currentDistance = current.x * normalX + current.y * normalY;
+			const bool currentInside = currentDistance <= edgeDistance;
+
+			if (currentInside != previousInside) {
+				const float denominator = currentDistance - previousDistance;
+				const float t = denominator != 0.0f ?
+					(edgeDistance - previousDistance) / denominator : 0.0f;
+				if (destinationCount < MAX_RADAR_VERTICES) {
+					destination[destinationCount++] = CVector2D(
+						previous.x + (current.x - previous.x) * t,
+						previous.y + (current.y - previous.y) * t);
+				}
+			}
+
+			if (currentInside && destinationCount < MAX_RADAR_VERTICES)
+				destination[destinationCount++] = current;
+
+			previous = current;
+			previousDistance = currentDistance;
+			previousInside = currentInside;
+		}
+
+		sourceCount = destinationCount;
+		sourceBuffer = 1 - sourceBuffer;
+	}
+
+	for (int i = 0; i < sourceCount; i++)
+		poly[i] = buffers[sourceBuffer][i];
+	return sourceCount;
+}
+#endif
+
 bool CRadar::DisplayThisBlip(int32 counter)
 {
 	switch (ms_RadarTrace[counter].m_eRadarSprite) {
@@ -798,7 +871,9 @@ void CRadar::DrawRadarMap()
 {
 	// Game calculates an unused CRect here
 
+#if !(defined(RW_VULKAN) && defined(__ANDROID__))
 	DrawRadarMask();
+#endif
 
 	// top left ist (0, 0)
 	int x = Floor((vec2DRadarOrigin.x - RADAR_MIN_X) / RADAR_TILE_SIZE);
@@ -810,7 +885,13 @@ void CRadar::DrawRadarMap()
 	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
 	RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
 	RwRenderStateSet(rwRENDERSTATESHADEMODE, (void*)rwSHADEMODEFLAT);
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// The tiles are already clipped to the circle and are HUD geometry, so the
+	// world's depth must not reject them.
+	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
+#else
 	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)TRUE);
+#endif
 	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
 	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
 	RwRenderStateSet(rwRENDERSTATETEXTUREADDRESS, (void*)rwTEXTUREADDRESSCLAMP);
@@ -881,11 +962,19 @@ void CRadar::DrawRadarSection(int32 x, int32 y)
 {
 	int i;
 	RwTexDictionary *txd;
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	CVector2D worldPoly[40];
+	CVector2D radarCorners[4];
+	CVector2D radarPoly[40];
+	CVector2D texCoords[40];
+	CVector2D screenPoly[40];
+#else
 	CVector2D worldPoly[8];
 	CVector2D radarCorners[4];
 	CVector2D radarPoly[8];
 	CVector2D texCoords[8];
 	CVector2D screenPoly[8];
+#endif
 	int numVertices;
 	RwTexture *texture = nil;
 
@@ -903,6 +992,9 @@ void CRadar::DrawRadarSection(int32 x, int32 y)
 		TransformRealWorldPointToRadarSpace(radarCorners[i], worldPoly[i]);
 
 	numVertices = ClipRadarPoly(radarPoly, radarCorners);
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	numVertices = ClipRadarPolyToCircle(radarPoly, numVertices);
+#endif
 
 	// FIX: can return earlier here
 //	if(numVertices == 0)

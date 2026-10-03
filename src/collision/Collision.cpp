@@ -257,6 +257,22 @@ CCollision::LoadCollisionWhenINeedIt(bool forceChange)
 
 		ms_collisionInMemory = CGame::currLevel;
 		CReplay::EmptyReplayBuffer();
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+#ifdef NO_ISLAND_LOADING
+		// With every island resident a crossing needs no loading. The blocking
+		// load below would run inside one frame, and the headset's batched GPU
+		// uploads only drain between frames, so it would stall the frame loop.
+		// Note the new level and keep going.
+		if (CMenuManager::m_PrefsIslandLoading == CMenuManager::ISLAND_LOADING_HIGH) {
+#ifdef FIX_BUGS
+			CTimer::Resume();
+#else
+			CTimer::Update();
+#endif
+			return;
+		}
+#endif
+#endif
 		ISLAND_LOADING_IS(LOW)
 		{
 			if (CGame::currLevel != LEVEL_GENERIC)

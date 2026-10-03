@@ -6,7 +6,11 @@
 #include "Sprite2d.h"
 #include "Font.h"
 
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+RwIm2DVertex CSprite2d::maVertices[40];
+#else
 RwIm2DVertex CSprite2d::maVertices[8];
+#endif
 float CSprite2d::RecipNearClip;
 int32 CSprite2d::mCurrentBank;
 RwTexture *CSprite2d::mpBankTextures[10];

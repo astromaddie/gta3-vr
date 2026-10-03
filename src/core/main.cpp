@@ -75,6 +75,10 @@
 #ifdef USE_OUR_VERSIONING
 #include "GitSHA1.h"
 #endif
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+#include "vulkan/rwvk.h"
+#include "../skel/android/android.h"
+#endif
 
 GlobalScene Scene;
 
@@ -226,6 +230,14 @@ DoRWStuffStartOfFrame(int16 TopRed, int16 TopGreen, int16 TopBlue, int16 BottomR
 bool
 DoRWStuffStartOfFrame_Horizon(int16 TopRed, int16 TopGreen, int16 TopBlue, int16 BottomRed, int16 BottomGreen, int16 BottomBlue, int16 Alpha)
 {
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// Rendering runs on the eye's real field of view, set before CameraSize
+	// derives the view window from it.
+	{
+		extern void VrApplyEyeFov(void);
+		VrApplyEyeFov();
+	}
+#endif
 #ifndef ASPECT_RATIO_SCALE
 	CameraSize(Scene.camera, nil, SCREEN_VIEWWINDOW, (CMenuManager::m_PrefsUseWideScreen ? 16.f/9.f : 4.f/3.f));
 #else
@@ -234,11 +246,34 @@ DoRWStuffStartOfFrame_Horizon(int16 TopRed, int16 TopGreen, int16 TopBlue, int16
 	CVisibilityPlugins::SetRenderWareCamera(Scene.camera);
 	RwCameraClear(Scene.camera, &gColourTop, CLEARMODE);
 
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// The Im2D plane must subtend the same angles this view window does.
+	{
+		extern void VrCaptureViewWindow(void);
+		VrCaptureViewWindow();
+	}
+	// Anchor BEFORE the camera update below: RwCameraBeginUpdate is where the
+	// backend composes the world transform from the anchor, so a stale anchor
+	// there renders the whole frame one game step behind the player.
+	{
+		extern void VrUpdateFirstPersonAnchor(bool postPhysics);
+		VrUpdateFirstPersonAnchor(true);
+	}
+#endif
+
 	if(!RsCameraBeginUpdate(Scene.camera))
 		return false;
 
 	TheCamera.m_viewMatrix.Update();
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// The sky gradient is drawn as full-screen 2D quads, which in the headset
+	// end up on the floating HUD plane. Feed the sky colour to the backend as
+	// the clear colour instead so it fills the whole view.
+	rw::vulkan::setClearColour((uint8)TopRed, (uint8)TopGreen, (uint8)TopBlue);
+	(void)BottomRed; (void)BottomGreen; (void)BottomBlue; (void)Alpha;
+#else
 	CClouds::RenderBackground(TopRed, TopGreen, TopBlue, BottomRed, BottomGreen, BottomBlue, Alpha);
+#endif
 
 	return true;
 }
@@ -247,7 +282,12 @@ DoRWStuffStartOfFrame_Horizon(int16 TopRed, int16 TopGreen, int16 TopBlue, int16
 void
 DoRWRenderHorizon(void)
 {
+#if !(defined(RW_VULKAN) && defined(__ANDROID__))
+	// The horizon strip only covers the flat camera's frustum; through the
+	// headset's wider, freely rotating view it reads as a rectangle of
+	// "correct" sky floating in the clear colour.
 	CClouds::RenderHorizon();
+#endif
 }
 
 void
@@ -1470,6 +1510,36 @@ void
 Render2dStuff(void)
 {
 	PUSH_RENDERGROUP("Render2dStuff");
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// The per-eye projection is much wider than the desktop HUD quad. Keep the
+	// immersive interface inside a binocularly comfortable safe area. World
+	// sprites are submitted outside this scope; theater frames keep their
+	// original full-screen layout.
+	if(androidgame::VrShouldUseTheaterMode()){
+		rw::vulkan::setIm2DSafeAreaTransform(1.0f, 1.0f, 0.0f, 0.0f);
+	}else{
+		int widthPercent, scalePercent, offsetXCm, offsetYCm;
+		androidgame::VrGetGameplayHudSettings(
+			&widthPercent, &scalePercent, &offsetXCm, &offsetYCm);
+		// 130% is the release default; on the native full-eye target it maps
+		// to the already player-tested 0.58 safe area.
+		const float uniform = 0.58f*(float)scalePercent/130.0f;
+		const float scaleX = uniform*(float)widthPercent/100.0f;
+		float viewWindowX = 0.6f, viewWindowY = 0.6f;
+		androidgame::GetIm2DViewWindow(&viewWindowX, &viewWindowY);
+		const float planeDistance = 2.0f;
+		const float offsetX =
+			(float)offsetXCm*0.01f*(float)RsGlobal.width/
+			(2.0f*planeDistance*Max(viewWindowX, 0.01f));
+		// Screen Y grows downward, while the menu's positive centimetres mean
+		// "move the HUD upward".
+		const float offsetY =
+			-(float)offsetYCm*0.01f*(float)RsGlobal.height/
+			(2.0f*planeDistance*Max(viewWindowY, 0.01f));
+		rw::vulkan::setIm2DSafeAreaTransform(
+			scaleX, uniform, offsetX, offsetY);
+	}
+#endif
 	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
 	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
 	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
@@ -1483,6 +1553,11 @@ Render2dStuff(void)
 	if(TheCamera.m_WideScreenOn
 #ifdef CUTSCENE_BORDERS_SWITCH
 		&& CMenuManager::m_PrefsCutsceneBorders
+#endif
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+		// The letterbox frames a picture. In a stereo cutscene there is no
+		// picture to frame, only two black bars across the player's eyes.
+		&& androidgame::VrCutsceneMode() == 0
 #endif
 		)
 		TheCamera.DrawBordersForWideScreen();
@@ -1534,6 +1609,9 @@ Render2dStuff(void)
 
 #ifdef DEBUGMENU
 	DebugMenuRender();
+#endif
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	rw::vulkan::setIm2DSafeAreaTransform(1.0f, 1.0f, 0.0f, 0.0f);
 #endif
 	POP_RENDERGROUP();
 }
@@ -1689,7 +1767,15 @@ Idle(void *arg)
 #endif
 
 		tbStartTimer(0, "RenderScene");
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+		// ScanWorld keeps a 360 degree list for head turns; cull it against
+		// the view actually being drawn before issuing draw calls.
+		CRenderer::SetVrPerViewCulling(true);
+#endif
 		RenderScene();
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+		CRenderer::SetVrPerViewCulling(false);
+#endif
 		tbEndTimer("RenderScene");
 
 #ifdef EXTENDED_PIPELINES
@@ -1710,7 +1796,11 @@ Idle(void *arg)
 #endif
 
 		tbStartTimer(0, "RenderMotionBlur");
+#if !(defined(RW_VULKAN) && defined(__ANDROID__))
+		// A full-screen quad: in the headset "full screen" is the floating
+		// HUD plane, so the blur shows up as a ghostly rectangle in the world.
 		TheCamera.RenderMotionBlur();
+#endif
 		tbEndTimer("RenderMotionBlur");
 
 		tbStartTimer(0, "Render2dStuff");

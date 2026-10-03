@@ -9,7 +9,13 @@ class CSprite2d
 	static int32 mCurrentSprite[10];
 	static int32 mBankStart[10];
 	static RwIm2DVertex maBankVertices[500];
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// The radar tiles are clipped to a 24-sided circle, so a tile can hold
+	// more than the original eight vertices.
+	static RwIm2DVertex maVertices[40];
+#else
 	static RwIm2DVertex maVertices[8];
+#endif
 public:
 	RwTexture *m_pTexture;
 

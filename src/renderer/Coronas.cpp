@@ -16,6 +16,43 @@
 #include "Shadows.h"
 #include "Clock.h"
 #include "Bridge.h"
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+#include "../skel/android/android.h"
+
+// Native cutscenes are rendered through a conventional mono 16:9 camera and
+// then submitted on the theater quad. The RenderWare camera raster is still
+// the per-eye portrait image, so CalcScreenCoors uses that portrait view
+// window. World geometry then follows the 16:9 theater projection while Im2D
+// coronas (most visibly moving vehicle headlights) follow the narrower
+// portrait projection and appear detached from the model.
+//
+// Remap theater-mode world sprites from the active RenderWare projection to
+// the projection the theater matrices use. Immersive gameplay keeps the
+// regular per-eye path.
+static void
+RemapCoronaToTheater(CVector *screen, float *width, float *height)
+{
+	if(!androidgame::VrShouldUseTheaterMode())
+		return;
+
+	const RwV2d *viewWindow = RwCameraGetViewWindow(Scene.camera);
+	if(viewWindow == nil || viewWindow->x <= 0.01f ||
+	   viewWindow->y <= 0.01f)
+		return;
+
+	const float theaterViewY = Tan(DEGTORAD(60.0f * 0.5f));
+	const float theaterViewX = theaterViewY * (16.0f / 9.0f);
+	const float scaleX = viewWindow->x / theaterViewX;
+	const float scaleY = viewWindow->y / theaterViewY;
+	const float centerX = SCREEN_WIDTH * 0.5f;
+	const float centerY = SCREEN_HEIGHT * 0.5f;
+
+	screen->x = centerX + (screen->x - centerX) * scaleX;
+	screen->y = centerY + (screen->y - centerY) * scaleY;
+	*width *= scaleX;
+	*height *= scaleY;
+}
+#endif
 
 struct FlareDef
 {
@@ -200,6 +237,14 @@ CCoronas::RegisterCorona(uint32 id, uint8 red, uint8 green, uint8 blue, uint8 al
 		const CVector &coors, float size, float drawDist, uint8 type,
 		int8 flareType, uint8 reflection, uint8 LOScheck, uint8 drawStreak, float someAngle)
 {
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// Both vehicle-light textures are stretched into a thin horizontal streak.
+	// In stereo that billboard reads as a white filament coming out of the
+	// lamp. Use the compact corona instead; the headlight beam itself is
+	// unaffected.
+	if(type == TYPE_HEADLIGHT || type == TYPE_STREAK)
+		type = TYPE_NORMAL;
+#endif
 	RegisterCorona(id, red, green, blue, alpha, coors, size, drawDist,
 		gpCoronaTexture[type], flareType, reflection, LOScheck, drawStreak, someAngle);
 }
@@ -266,6 +311,9 @@ CCoronas::Render(void)
 			aCoronas[i].offScreen = true;
 			aCoronas[i].sightClear = false;
 		}else{
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+			RemapCoronaToTheater(&spriteCoors, &spritew, &spriteh);
+#endif
 			aCoronas[i].offScreen = false;
 
 			if(spriteCoors.x < 0.0f || spriteCoors.y < 0.0f ||
@@ -386,6 +434,10 @@ CCoronas::Render(void)
 	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, nil);
 
 	// streaks
+#if !(defined(RW_VULKAN) && defined(__ANDROID__))
+	// Screen-space trails have no common stereo depth and are drawn without
+	// depth testing, so in multiview they turn into thin white filaments seen
+	// through every wall.
 	for(i = 0; i < NUMCORONAS; i++){
 		if(aCoronas[i].id == 0 || !aCoronas[i].drawStreak)
 			continue;
@@ -416,6 +468,7 @@ CCoronas::Render(void)
 			RwIm2DRenderLine(vertexbufferX, 2, 0, 1);
 		}
 	}
+#endif
 
 	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
 	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)TRUE);
@@ -483,6 +536,14 @@ CCoronas::RenderReflections(void)
 						float distanceFade = spriteCoors.z < fadeDistance ? 1.0f : 1.0f - (spriteCoors.z - fadeDistance)/fadeDistance;
 						distanceFade = Clamp(distanceFade, 0.0f, 1.0f);
 						float recipz = 1.0f/RwCameraGetNearClipPlane(Scene.camera);
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+						// The multiview Im2D shader reconstructs stereo depth from
+						// this value, so near-clip makes the reflection float in
+						// front of the road. It is already projected from the
+						// virtual source mirrored below the road; use that
+						// source's real camera depth.
+						recipz = 1.0f/spriteCoors.z;
+#endif
 						float heightFade = (20.0f - aCoronas[i].heightAboveRoad)/20.0f;
 						int intensity = distanceFade*heightFade * 230.0 * CWeather::WetRoads;
 

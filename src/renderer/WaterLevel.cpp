@@ -24,6 +24,10 @@
 #include "WaterLevel.h"
 #include "MemoryHeap.h"
 
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+#include "../skel/android/android.h"
+#endif
+
 
 float TEXTURE_ADDU;
 float TEXTURE_ADDV;
@@ -607,21 +611,42 @@ _GetWavyDrawDist()
 		return 70.0f;
 }
 
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+// Which way the water is built is chosen from the view direction: the sector
+// window is biased along it and the far blocks behind it are never filled.
+// TheCamera keeps the heading the character faces, so in a headset the sea
+// would be assembled for wherever the character looks and have holes in it
+// everywhere else.
+static CVector
+WaterViewForward(void)
+{
+	float forward[3];
+	if(androidgame::VrGetViewBasis(nil, nil, nil, forward))
+		return CVector(forward[0], forward[1], forward[2]);
+	return TheCamera.GetForward();
+}
+#endif
+
 inline void
 _GetCamBounds(bool *bUseCamStartY, bool *bUseCamEndY, bool *bUseCamStartX, bool *bUseCamEndX)
 {
-	if ( TheCamera.GetForward().z > -0.8f )
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	const CVector fwd = WaterViewForward();
+#else
+	const CVector &fwd = TheCamera.GetForward();
+#endif
+	if ( fwd.z > -0.8f )
 	{
-		if ( Abs(TheCamera.GetForward().x) > Abs(TheCamera.GetForward().y) )
+		if ( Abs(fwd.x) > Abs(fwd.y) )
 		{
-			if ( TheCamera.GetForward().x > 0.0f )
+			if ( fwd.x > 0.0f )
 				*bUseCamStartX = true;
 			else
 				*bUseCamEndX = true;
 		}
 		else
 		{
-			if ( TheCamera.GetForward().y > 0.0f )
+			if ( fwd.y > 0.0f )
 				*bUseCamStartY = true;
 			else
 				*bUseCamEndY = true;

@@ -24,6 +24,9 @@
 #include "Frontend.h"
 #include "custompipes.h"
 #include "Debug.h"
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+#include "vulkan/rwvk.h"
+#endif
 
 bool gbShowPedRoadGroups;
 bool gbShowCarRoadGroups;
@@ -94,13 +97,64 @@ BlockedRange *CRenderer::pFullBlockedRanges;
 BlockedRange *CRenderer::pEmptyBlockedRanges;
 
 #if defined(RW_VULKAN) && defined(__ANDROID__)
-CVector CRenderer::ms_vrViewCameraPosition;
+bool CRenderer::ms_bVrOmnidirectionalScan;
+bool CRenderer::ms_bVrPerViewCulling;
+int32 CRenderer::ms_nVrCullingMode = VR_CULLING_SAFE;
 
-// STUB (T3): the culling hooks that consume this are T5.
-void
-CRenderer::SetVrViewCameraPosition(const CVector &position)
+// From android.cpp: the player's body is hidden while the view sits in the
+// player's head.
+extern bool gVrFirstPersonActive;
+extern bool gVrHidePlayerBody;
+extern CEntity *gVrPlayerEntity;
+
+// The scan builds a list for the whole circle around the player, because the
+// head can turn between building the list and drawing it. Everything that used
+// to be a one-camera on-screen test is therefore "inside" during the scan, and
+// the list is cut down to what the eyes see when it is drawn.
+bool
+CRenderer::IsEntityOutsideCurrentView(CEntity *ent, bool complex)
 {
-	ms_vrViewCameraPosition = position;
+	if(ms_bVrOmnidirectionalScan)
+		return false;
+	return complex ? !ent->GetIsOnScreenComplex() : !ent->GetIsOnScreen();
+}
+
+// Tests an entity against the exact asymmetric projections of both eyes.
+bool
+CRenderer::ShouldRenderInCurrentView(CEntity *ent)
+{
+	if(!ms_bVrPerViewCulling)
+		return true;
+	if(ent == nil || ent->m_rwObject == nil)
+		return false;
+	// OFF is the correctness fallback: the complete list, never a view hole.
+	if(ms_nVrCullingMode == VR_CULLING_OFF)
+		return true;
+	// SAFE: both eyes' frusta, with a generous margin so far props don't pop
+	// at the edge during a quick head turn. The backend fails open while its
+	// stereo planes are unavailable.
+	const float angularMarginTangent = 0.14054083f;
+	if(ent->IsBuilding()){
+		CColModel *colModel = CModelInfo::GetModelInfo(ent->GetModelIndex())->GetColModel();
+		if(colModel != nil){
+			const CVector &boxMin = colModel->boundingBox.min;
+			const CVector &boxMax = colModel->boundingBox.max;
+			float worldCorners[8][3];
+			for(int corner = 0; corner < 8; corner++){
+				const CVector local(
+					(corner & 1) ? boxMax.x : boxMin.x,
+					(corner & 2) ? boxMax.y : boxMin.y,
+					(corner & 4) ? boxMax.z : boxMin.z);
+				const CVector world = ent->GetMatrix()*local;
+				worldCorners[corner][0] = world.x;
+				worldCorners[corner][1] = world.y;
+				worldCorners[corner][2] = world.z;
+			}
+			return rw::vulkan::isFirstPersonWorldBoxVisibleInStereo(worldCorners, angularMarginTangent) != 0;
+		}
+	}
+	const CVector boundCentre = ent->GetBoundCentre();
+	return rw::vulkan::isFirstPersonWorldSphereVisibleInStereo(&boundCentre.x, ent->GetBoundRadius(), angularMarginTangent) != 0;
 }
 #endif
 
@@ -169,6 +223,10 @@ CRenderer::PreRender(void)
 void
 CRenderer::RenderOneRoad(CEntity *e)
 {
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	if(!ShouldRenderInCurrentView(e))
+		return;
+#endif
 #ifndef MASTER
 	if(gbDontRenderBuildings)
 		return;
@@ -203,6 +261,17 @@ CRenderer::RenderOneNonRoad(CEntity *e)
 	int i;
 	bool resetLights;
 
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// A render list can outlive an entity's RenderWare object across a
+	// transition, and the stereo view draws it more than once.
+	if(e == nil || e->m_rwObject == nil)
+		return;
+	// In first person the camera sits inside the player's own head.
+	if(gVrHidePlayerBody && gVrFirstPersonActive && e == gVrPlayerEntity)
+		return;
+	if(!ShouldRenderInCurrentView(e))
+		return;
+#endif
 #ifndef MASTER
 	if(gbShowCollisionPolys){
 		if(!e->IsVehicle()){
@@ -249,10 +318,22 @@ CRenderer::RenderOneNonRoad(CEntity *e)
 	// Render Peds in vehicle before vehicle itself
 	if(e->IsVehicle()){
 		veh = (CVehicle*)e;
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+		// The player drives from inside their own model; it must not render.
+		const bool hidePlayer = gVrHidePlayerBody && gVrFirstPersonActive;
+		if(veh->pDriver && veh->pDriver->m_nPedState == PED_DRIVING &&
+		   !(hidePlayer && (CEntity*)veh->pDriver == gVrPlayerEntity))
+#else
 		if(veh->pDriver && veh->pDriver->m_nPedState == PED_DRIVING)
+#endif
 			veh->pDriver->Render();
 		for(i = 0; i < 8; i++)
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+			if(veh->pPassengers[i] && veh->pPassengers[i]->m_nPedState == PED_DRIVING &&
+			   !(hidePlayer && (CEntity*)veh->pPassengers[i] == gVrPlayerEntity))
+#else
 			if(veh->pPassengers[i] && veh->pPassengers[i]->m_nPedState == PED_DRIVING)
+#endif
 				veh->pPassengers[i]->Render();
 		BACKFACE_CULLING_OFF;
 	}
@@ -348,6 +429,12 @@ CRenderer::RenderEverythingBarRoads(void)
 		if(IsRoad(e))
 			continue;
 
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+		// Cull before transparent vehicles and peds enter the sorted list;
+		// otherwise the whole 360 degree set is drawn from there.
+		if(!ShouldRenderInCurrentView(e))
+			continue;
+#endif
 #ifdef EXTENDED_PIPELINES
 		if(CustomPipes::bRenderingEnvMap && (e->IsPed() || e->IsVehicle()))
 			continue;
@@ -790,7 +877,11 @@ CRenderer::SetupEntityVisibility(CEntity *ent)
 			// All sorts of Clumps
 			if(ent->m_rwObject == nil || !ent->bIsVisible)
 				return VIS_INVISIBLE;
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+			if(IsEntityOutsideCurrentView(ent))
+#else
 			if(!ent->GetIsOnScreen())
+#endif
 				return VIS_OFFSCREEN;
 			if(ent->bDrawLast){
 				dist = (ent->GetPosition() - ms_vecCameraPosition).Magnitude();
@@ -804,7 +895,11 @@ CRenderer::SetupEntityVisibility(CEntity *ent)
 		   ((CObject*)ent)->ObjectCreatedBy == TEMP_OBJECT){
 			if(ent->m_rwObject == nil || !ent->bIsVisible)
 				return VIS_INVISIBLE;
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+			return IsEntityOutsideCurrentView(ent) ? VIS_OFFSCREEN : VIS_VISIBLE;
+#else
 			return ent->GetIsOnScreen() ? VIS_VISIBLE : VIS_OFFSCREEN;
+#endif
 		}
 	}
 
@@ -835,7 +930,11 @@ CRenderer::SetupEntityVisibility(CEntity *ent)
 		if(ent->m_rwObject == nil || !ent->bIsVisible)
 			return VIS_INVISIBLE;
 
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+		if(IsEntityOutsideCurrentView(ent)){
+#else
 		if(!ent->GetIsOnScreen()){
+#endif
 			mi->m_alpha = 255;
 			return VIS_OFFSCREEN;
 		}
@@ -885,7 +984,11 @@ CRenderer::SetupEntityVisibility(CEntity *ent)
 	if(ent->m_rwObject == nil || !ent->bIsVisible)
 		return VIS_INVISIBLE;
 
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	if(IsEntityOutsideCurrentView(ent)){
+#else
 	if(!ent->GetIsOnScreen()){
+#endif
 		mi->m_alpha = 255;
 		return VIS_OFFSCREEN;
 	}else{
@@ -946,7 +1049,11 @@ CRenderer::SetupBigBuildingVisibility(CEntity *ent)
 		// that of an atomic for another draw distance.
 		if(RpAtomicGetGeometry(a) != RpAtomicGetGeometry(rwobj))
 			RpAtomicSetGeometry(rwobj, RpAtomicGetGeometry(a), rpATOMICSAMEBOUNDINGSPHERE); // originally 5 (mistake?)
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+		if (!ent->IsVisible() || IsEntityOutsideCurrentView(ent, true))
+#else
 		if (!ent->IsVisible() || !ent->GetIsOnScreenComplex())
+#endif
 			return VIS_INVISIBLE;
 		if(mi->m_drawLast){
 			CVisibilityPlugins::InsertEntityIntoSortedList(ent, dist);
@@ -976,7 +1083,11 @@ CRenderer::SetupBigBuildingVisibility(CEntity *ent)
 	RpAtomic *rwobj = (RpAtomic*)ent->m_rwObject;
 	if(RpAtomicGetGeometry(a) != RpAtomicGetGeometry(rwobj))
 		RpAtomicSetGeometry(rwobj, RpAtomicGetGeometry(a), rpATOMICSAMEBOUNDINGSPHERE); // originally 5 (mistake?)
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	if (ent->IsVisible() && !IsEntityOutsideCurrentView(ent, true))
+#else
 	if (ent->IsVisible() && ent->GetIsOnScreenComplex())
+#endif
 		CVisibilityPlugins::InsertEntityIntoSortedList(ent, dist);
 	return VIS_INVISIBLE;
 }
@@ -1098,6 +1209,50 @@ CRenderer::ScanWorld(void)
 	RwV3dTransformPoints(vectors, vectors, 9, cammatrix);
 
 	m_loadingPriority = false;
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// The desktop scan covers only the wedge in front of its camera. The
+	// headset can turn after this list is built, so scan the whole area around
+	// the player and let each draw clip it against the real eye frusta.
+	{
+		ms_bVrOmnidirectionalScan = true;
+		const float radius = LOD_DISTANCE;
+		int x1 = CWorld::GetSectorIndexX(ms_vecCameraPosition.x - radius);
+		int x2 = CWorld::GetSectorIndexX(ms_vecCameraPosition.x + radius);
+		int y1 = CWorld::GetSectorIndexY(ms_vecCameraPosition.y - radius);
+		int y2 = CWorld::GetSectorIndexY(ms_vecCameraPosition.y + radius);
+		if(x1 < 0) x1 = 0;
+		if(x2 >= NUMSECTORS_X) x2 = NUMSECTORS_X - 1;
+		if(y1 < 0) y1 = 0;
+		if(y2 >= NUMSECTORS_Y) y2 = NUMSECTORS_Y - 1;
+
+		CVehicle *train = FindPlayerTrain();
+		const bool subway = train && train->GetPosition().z < 0.0f;
+		for(int x = x1; x <= x2; x++)
+			for(int y = y1; y <= y2; y++){
+				if(subway)
+					ScanSectorList_Subway(CWorld::GetSector(x, y)->m_lists);
+				else
+					ScanSectorList(CWorld::GetSector(x, y)->m_lists);
+			}
+
+		if(!subway){
+#ifdef NO_ISLAND_LOADING
+			if (CMenuManager::m_PrefsIslandLoading == CMenuManager::ISLAND_LOADING_HIGH) {
+				ScanBigBuildingList(CWorld::GetBigBuildingList(LEVEL_INDUSTRIAL));
+				ScanBigBuildingList(CWorld::GetBigBuildingList(LEVEL_COMMERCIAL));
+				ScanBigBuildingList(CWorld::GetBigBuildingList(LEVEL_SUBURBAN));
+			} else
+#endif
+			{
+				if (CCollision::ms_collisionInMemory != LEVEL_GENERIC)
+					ScanBigBuildingList(CWorld::GetBigBuildingList(CCollision::ms_collisionInMemory));
+			}
+			ScanBigBuildingList(CWorld::GetBigBuildingList(LEVEL_GENERIC));
+		}
+		ms_bVrOmnidirectionalScan = false;
+		return;
+	}
+#endif
 	if(TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_TOPDOWN ||
 #ifdef FIX_BUGS
 	   TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_GTACLASSIC ||
@@ -1483,6 +1638,12 @@ CRenderer::InsertEntityIntoList(CEntity *ent)
 	if (!ent->m_rwObject) return;
 #endif
 
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// A full list must not write past the end: the last-scanned entities are
+	// dropped instead.
+	if(ms_nNoOfVisibleEntities >= NUMVISIBLEENTITIES)
+		return;
+#endif
 #ifdef NEW_RENDERER
 	// TODO: there are more flags being checked here
 	if(gbNewRenderer && (ent->IsVehicle() || ent->IsPed()))

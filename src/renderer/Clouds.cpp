@@ -124,6 +124,13 @@ CClouds::Render(void)
 	RwV3d screenpos;
 	RwV3d worldpos;
 
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// The clouds, sun glow and rainbow are screen-space Im2D sprites placed by
+	// projecting a sky direction through the flat camera. In the headset they
+	// land on the floating HUD plane. The sky is the clear colour for now.
+	CCoronas::SunBlockedByClouds = false;
+	return;
+#endif
 	PUSH_RENDERGROUP("CClouds::Render");
 
 	CCoronas::SunBlockedByClouds = false;

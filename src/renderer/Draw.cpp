@@ -4,6 +4,9 @@
 #include "Frontend.h"
 #include "Camera.h"
 #include "CutsceneMgr.h"
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+#include "../skel/android/android.h"
+#endif
 
 #ifdef ASPECT_RATIO_SCALE
 float CDraw::ms_fAspectRatio = DEFAULT_ASPECT_RATIO;
@@ -33,6 +36,13 @@ bool CDraw::ms_bFixSprites = true;
 float
 CDraw::FindAspectRatio(void)
 {
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// Theater mode shows the frame on a quad of a fixed shape. AR_AUTO would
+	// report the eye buffer's own ratio, which is nearly square, and the
+	// interface would be laid out for one shape and displayed on another.
+	if(androidgame::VrShouldUseTheaterMode())
+		return androidgame::VrTheaterAspectRatio();
+#endif
 #ifndef ASPECT_RATIO_SCALE
 	if(FrontEndMenuManager.m_PrefsUseWideScreen)	
 		return 16.0f/9.0f;

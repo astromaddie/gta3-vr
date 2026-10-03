@@ -36,6 +36,14 @@ extern bool gbDontRenderVehicles;
 class CVehicle;
 class CPtrList;
 
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+enum eVrCullingMode
+{
+	VR_CULLING_OFF = 0,	// draw the whole 360 degree list; no per-view holes, costs speed
+	VR_CULLING_SAFE,	// both eyes' real frusta plus a margin
+};
+#endif
+
 // unused
 struct BlockedRange
 {
@@ -59,6 +67,14 @@ class CRenderer
 
 	static CVUVECTOR ms_vecCameraPosition;
 	static CVehicle *m_pFirstPersonVehicle;
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	static bool ms_bVrOmnidirectionalScan;	// true while ScanWorld builds the 360 degree list
+	static bool ms_bVrPerViewCulling;	// true while the scene is drawn
+	static int32 ms_nVrCullingMode;
+	// What the on-screen tests become in a headset: during the scan the view
+	// is not known yet, so nothing is "outside".
+	static bool IsEntityOutsideCurrentView(CEntity *ent, bool complex = false);
+#endif
 
 	// unused
 	static BlockedRange aBlockedRanges[16];
@@ -72,10 +88,15 @@ public:
 	static void Shutdown(void);
 	static void PreRender(void);
 #if defined(RW_VULKAN) && defined(__ANDROID__)
-	// Where the headset's eyes are this frame, in world space. Stage 1 only
-	// records it; the all-round VR culling (T5) reads it.
-	static void SetVrViewCameraPosition(const CVector &position);
-	static CVector ms_vrViewCameraPosition;
+	// Where the headset's eyes are this frame, in world space. It replaces the
+	// gameplay camera position for the distance sorting and fade distances of
+	// the render, which runs after ConstructRenderList has set it.
+	static void SetVrViewCameraPosition(const CVector &position) { ms_vecCameraPosition = position; }
+	// The render list is built for the whole circle around the player; with
+	// this on, the Render* functions drop what neither eye can see.
+	static void SetVrPerViewCulling(bool enabled) { ms_bVrPerViewCulling = enabled; }
+	static void SetVrCullingMode(int32 mode) { ms_nVrCullingMode = mode; }
+	static bool ShouldRenderInCurrentView(CEntity *ent);
 #endif
 
 	static void RenderRoads(void);

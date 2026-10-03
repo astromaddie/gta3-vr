@@ -138,7 +138,13 @@ int8 CMenuManager::m_nDisplayMSAALevel = 0;
 #endif
 
 #ifdef NO_ISLAND_LOADING
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+// Everything resident: an island crossing then needs no loading screen, which
+// the headset's frame loop cannot show.
+int8 CMenuManager::m_PrefsIslandLoading = ISLAND_LOADING_HIGH;
+#else
 int8 CMenuManager::m_PrefsIslandLoading = ISLAND_LOADING_LOW;
+#endif
 #endif
 
 #ifdef GAMEPAD_MENU

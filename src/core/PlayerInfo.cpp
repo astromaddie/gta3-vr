@@ -412,6 +412,13 @@ FindPlayerCoors(void)
 		return TheCamera.GetPosition();
 #endif
 	CPlayerPed *ped = FindPlayerPed();
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// A save load restores scripts and world subsystems before it restores the
+	// player; they legitimately ask for the player position while the ped is
+	// still null.
+	if(ped == nil)
+		return TheCamera.GetPosition();
+#endif
 	if(ped->InVehicle())
 		return ped->m_pMyVehicle->GetPosition();
 	else
