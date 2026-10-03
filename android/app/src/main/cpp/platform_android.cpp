@@ -538,8 +538,9 @@ convertImaAdpcmWav(const std::string &source, const std::string &destination)
 	const uint16_t blockAlign = readLe16(format + 12);
 	const uint16_t bitsPerSample = readLe16(format + 14);
 	const uint16_t samplesPerBlock = readLe16(format + 18);
-	if(channels != 1 || sampleRate == 0 || blockAlign < 4 ||
-	   bitsPerSample != 4 || samplesPerBlock == 0)
+	// GTA III's radio and cutscene streams are stereo; Vice City's were mono.
+	if((channels != 1 && channels != 2) || sampleRate == 0 ||
+	   blockAlign < 4u*channels || bitsPerSample != 4 || samplesPerBlock == 0)
 		return ImaWavConversion::Failed;
 
 	const size_t fullBlocks = compressedSize / blockAlign;
@@ -553,7 +554,57 @@ convertImaAdpcmWav(const std::string &source, const std::string &destination)
 	pcm.reserve(estimatedSamples);
 
 	size_t offset = 0;
-	while(offset + 4 <= compressedSize &&
+	if(channels == 2){
+		// Stereo IMA ADPCM: a 4-byte header per channel (predictor, step
+		// index, reserved), then groups of 4 bytes per channel in turn, each
+		// group 8 samples of that channel, low nibble first. factSamples
+		// counts frames (samples per channel); pcm is interleaved L R.
+		std::vector<int16_t> left(samplesPerBlock), right(samplesPerBlock);
+		while(offset + 8 <= compressedSize &&
+		      (factSamples == 0 || pcm.size()/2 < factSamples)){
+			const size_t bytesInBlock =
+				std::min(size_t(blockAlign), compressedSize - offset);
+			const uint8_t *block = compressed + offset;
+			int predictor[2] = { int16_t(readLe16(block)),
+			                     int16_t(readLe16(block + 4)) };
+			int stepIndex[2] = { block[2], block[6] };
+			if(stepIndex[0] > 88 || stepIndex[1] > 88)
+				return ImaWavConversion::Failed;
+			int16_t *out[2] = { left.data(), right.data() };
+			out[0][0] = int16_t(predictor[0]);
+			out[1][0] = int16_t(predictor[1]);
+			size_t frames = 1;
+			size_t pos = 8;
+			while(pos + 8 <= bytesInBlock && frames < samplesPerBlock){
+				for(int c = 0; c < 2; c++){
+					for(int b = 0; b < 4; b++){
+						const uint8_t byte = block[pos + c*4 + b];
+						const size_t at = frames + b*2;
+						const int16_t lo = decodeImaNibble(byte & 0x0F,
+							predictor[c], stepIndex[c]);
+						const int16_t hi = decodeImaNibble(byte >> 4,
+							predictor[c], stepIndex[c]);
+						if(at < samplesPerBlock)
+							out[c][at] = lo;
+						if(at + 1 < samplesPerBlock)
+							out[c][at + 1] = hi;
+					}
+				}
+				frames = std::min(frames + 8, size_t(samplesPerBlock));
+				pos += 8;
+			}
+			for(size_t i = 0; i < frames; i++){
+				if(factSamples != 0 && pcm.size()/2 >= factSamples)
+					break;
+				pcm.push_back(out[0][i]);
+				pcm.push_back(out[1][i]);
+			}
+			offset += bytesInBlock;
+		}
+		if(factSamples != 0 && pcm.size() > size_t(factSamples)*2)
+			pcm.resize(size_t(factSamples)*2);
+	}
+	while(channels == 1 && offset + 4 <= compressedSize &&
 	      (factSamples == 0 || pcm.size() < factSamples)){
 		const size_t bytesInBlock =
 			std::min(size_t(blockAlign), compressedSize - offset);
@@ -580,7 +631,7 @@ convertImaAdpcmWav(const std::string &source, const std::string &destination)
 		}
 		offset += bytesInBlock;
 	}
-	if(factSamples != 0 && pcm.size() > factSamples)
+	if(channels == 1 && factSamples != 0 && pcm.size() > factSamples)
 		pcm.resize(factSamples);
 	if(pcm.empty() || pcm.size() > (UINT32_MAX - 36u) / 2u)
 		return ImaWavConversion::Failed;
@@ -592,10 +643,10 @@ convertImaAdpcmWav(const std::string &source, const std::string &destination)
 	memcpy(header + 8, "WAVEfmt ", 8);
 	writeLe32(header + 16, 16);
 	writeLe16(header + 20, 1);
-	writeLe16(header + 22, 1);
+	writeLe16(header + 22, channels);
 	writeLe32(header + 24, sampleRate);
-	writeLe32(header + 28, sampleRate * sizeof(int16_t));
-	writeLe16(header + 32, sizeof(int16_t));
+	writeLe32(header + 28, sampleRate * channels * sizeof(int16_t));
+	writeLe16(header + 32, channels * sizeof(int16_t));
 	writeLe16(header + 34, 16);
 	memcpy(header + 36, "data", 4);
 	writeLe32(header + 40, pcmBytes);
