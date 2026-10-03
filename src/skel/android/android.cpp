@@ -646,8 +646,28 @@ androidgame::VrCinema3DDepthThisFrame(void)
 	   FrontEndMenuManager.m_bMenuActive ||
 	   FrontEndMenuManager.m_bWantToRestart ||
 	   FrontEndMenuManager.m_bWantToLoad ||
-	   CGame::playingIntro || FindPlayerPed() == nil)
+	   // GTA III's script holds playingIntro for the whole opening, cutscenes
+	   // included. Only the gaps between them have no camera worth depth.
+	   (CGame::playingIntro && !CCutsceneMgr::IsRunning()) ||
+	   FindPlayerPed() == nil){
+		// Say once per cutscene why it stays flat, so a missing 3D cinema
+		// can be traced without a debugger.
+		static bool reported;
+		if(cutscene && !reported){
+			reported = true;
+			ALOG("[vr] cinema 3D held flat: state=%d notLoaded=%d menu=%d "
+			     "restart=%d load=%d intro=%d player=%d",
+			     (int)gGameState,
+			     (int)FrontEndMenuManager.m_bGameNotLoaded,
+			     (int)FrontEndMenuManager.m_bMenuActive,
+			     (int)FrontEndMenuManager.m_bWantToRestart,
+			     (int)FrontEndMenuManager.m_bWantToLoad,
+			     (int)CGame::playingIntro, FindPlayerPed() != nil);
+		}
+		if(!cutscene)
+			reported = false;
 		return 0.0f;
+	}
 	return androidgame::VrCinema3DDepth();
 }
 #endif
