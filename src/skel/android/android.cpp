@@ -647,8 +647,10 @@ androidgame::VrCinema3DDepthThisFrame(void)
 	   FrontEndMenuManager.m_bWantToRestart ||
 	   FrontEndMenuManager.m_bWantToLoad ||
 	   // GTA III's script holds playingIntro for the whole opening, cutscenes
-	   // included. Only the gaps between them have no camera worth depth.
-	   (CGame::playingIntro && !CCutsceneMgr::IsRunning()) ||
+	   // and its letterboxed scripted scenes included. Only the gaps between
+	   // them have no camera worth depth.
+	   (CGame::playingIntro && !CCutsceneMgr::IsRunning() &&
+	    !TheCamera.m_WideScreenOn) ||
 	   FindPlayerPed() == nil){
 		// Say once per cutscene why it stays flat, so a missing 3D cinema
 		// can be traced without a debugger.
