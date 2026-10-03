@@ -33,6 +33,14 @@
 #include "Range2D.h"
 #include "Wanted.h"
 #include "SaveBuf.h"
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+#include "../skel/android/android.h"
+// Set every frame by the headset's anchor code (android.cpp).
+extern bool gVrFirstPersonActive;
+extern bool gVrInVehicle;
+extern bool gVrHidePlayerBody;
+extern CEntity *gVrPlayerEntity;
+#endif
 
 CPed *gapTempPedList[50];
 uint16 gnNumTempPedList;
@@ -4854,6 +4862,21 @@ CPed::PreRender(void)
 			RwV3d zero = { 0.0f, 0.0f, 0.0f };
 			RwMatrixScale(head, &zero, rwCOMBINEPRECONCAT);
 		}
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+		// Driving in first person keeps the animated occupant -- players
+		// want to see themselves at the wheel -- but the headset's eye sits
+		// inside that head, so it is dropped for the draw the same way a
+		// shot-off one is. Third person views the body from outside and
+		// never gets here.
+		if(gVrFirstPersonActive && gVrInVehicle && !gVrHidePlayerBody &&
+		   (CEntity*)this == gVrPlayerEntity && m_pFrames[PED_HEAD]){
+			RpHAnimHierarchy *hier = GetAnimHierarchyFromSkinClump(GetClump());
+			int32 idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_HEAD));
+			RwMatrix *head = &RpHAnimHierarchyGetMatrixArray(hier)[idx];
+			RwV3d zero = { 0.0f, 0.0f, 0.0f };
+			RwMatrixScale(head, &zero, rwCOMBINEPRECONCAT);
+		}
+#endif
 	}
 #endif
 
@@ -4929,6 +4952,14 @@ CPed::PreRender(void)
 void
 CPed::Render(void)
 {
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// First person: the player's own body never renders, whatever path led
+	// here. The in-vehicle model in particular is synced to the ped's
+	// pre-physics position and visibly slides against the smoothly moving car.
+	if(gVrHidePlayerBody && gVrFirstPersonActive &&
+	   (CEntity*)this == gVrPlayerEntity)
+		return;
+#endif
 	if (bInVehicle && m_nPedState != PED_EXIT_CAR && m_nPedState != PED_DRAG_FROM_CAR) {
 		if (!bRenderPedInCar)
 			return;

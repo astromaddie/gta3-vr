@@ -1014,8 +1014,10 @@ VrUpdateFirstPersonAnchor(bool postPhysics)
 	// No tracked hands and no physical driving in this port, so the body is
 	// hidden only on foot in first person: in a vehicle the animated driver
 	// stays, and over-the-shoulder shows the character.
-	gVrHidePlayerBody = !thirdPersonVehicle && !thirdPersonOnFoot &&
-		!thirdPersonHold && !gVrInVehicle &&
+	// A scripted scene filmed in stereo (the opening drive) is not first
+	// person either: the actors, the player among them, are in the shot.
+	gVrHidePlayerBody = wantFirstPerson && !thirdPersonVehicle &&
+		!thirdPersonOnFoot && !thirdPersonHold && !gVrInVehicle &&
 		!(player != nil && player->DyingOrDead());
 
 	// Verbatim port of the desktop VR base camera (RenderVrStereoFrame in
