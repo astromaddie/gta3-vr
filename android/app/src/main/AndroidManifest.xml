@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+	<!-- The src/frame manifest relaxes this for the Steam Frame, whose
+	     container may not advertise the feature. -->
+	<uses-feature android:name="android.hardware.vr.headtracking" android:required="true" android:version="1" />
+	<uses-feature android:name="android.hardware.vulkan.level" android:version="1" android:required="true" />
+	<uses-feature android:name="android.hardware.vulkan.version" android:version="0x401000" android:required="true" />
+
+	<!-- Hand tracking is deliberately NOT declared. Input is controllers only. -->
+
+	<application
+		android:label="@string/app_name"
+		android:icon="@mipmap/ic_launcher"
+		android:allowBackup="false"
+		android:extractNativeLibs="true">
+
+		<!-- com.oculus.supportedDevices is deliberately absent. It gates store
+		     submissions, and an unrecognised token there can make Horizon OS
+		     refuse to launch a sideloaded build. -->
+
+		<activity
+			android:name="android.app.NativeActivity"
+			android:label="@string/app_name"
+			android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"
+			android:launchMode="singleTask"
+			android:screenOrientation="landscape"
+			android:excludeFromRecents="false"
+			android:configChanges="screenSize|screenLayout|orientation|keyboardHidden|keyboard|navigation|uiMode|density"
+			android:resizeableActivity="false"
+			android:exported="true">
+
+			<meta-data android:name="android.app.lib_name" android:value="gta3vr" />
+
+			<intent-filter>
+				<action android:name="android.intent.action.MAIN" />
+				<category android:name="android.intent.category.LAUNCHER" />
+				<category android:name="org.khronos.openxr.intent.category.IMMERSIVE_HMD" />
+			</intent-filter>
+		</activity>
+	</application>
+</manifest>

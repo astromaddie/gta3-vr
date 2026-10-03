@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+	Merged over src/main for the "frame" build type: the Valve Steam Frame, whose
+	Android container (Lepton, Android 11) runs the app on SteamVR's OpenXR
+	runtime. The base manifest requires the headtracking feature; the container may
+	not advertise it, so it is not required here. There is no Horizon OS shell
+	metadata (focusaware) in either manifest.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+	xmlns:tools="http://schemas.android.com/tools">
+
+	<uses-feature
+		android:name="android.hardware.vr.headtracking"
+		android:required="false"
+		tools:replace="android:required" />
+
+	<!--
+		Game data, settings, saves and VR diagnostics live in
+		/sdcard/Documents/GTA3VR, the headset's ~/Documents/GTA3VR, which
+		survives Lepton resets. Lepton makes /sdcard/Documents a symlink to the host
+		folder, so plain file permissions decide there; the grant is declared in
+		case a later Lepton enforces Android's storage rules. The native side falls
+		back to the app's external files dir, with a log line, if the folder cannot
+		be written.
+	-->
+	<uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+
+	<application android:requestLegacyExternalStorage="true">
+	</application>
+</manifest>
