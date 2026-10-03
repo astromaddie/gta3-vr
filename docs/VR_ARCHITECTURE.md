@@ -237,10 +237,13 @@ driven by `vr-diag.ini`), **not worn** (nobody has played it).
 | First-person stereo gameplay: world, HUD plane, round radar, compact coronas, body hidden, 72 fps | device, unattended |
 | Fixes found on the way: no TXD.IMG cache on Vulkan; 3D cinema through GTA III's `playingIntro` | device, unattended |
 | Pad mapping (on foot and in vehicles), Menu as Start, View short and hold, system recentre, sfvr timing | host build (read against the Vice City build, which is worn) |
-| Third person: 3D SCREEN and OVER SHOULDER, the View toggle, the held chase view, the body shown | host build, not worn |
-| Head-relative movement, head aim, head-driven weapon cameras | host build, not worn |
+| Each view mode after the intro (`ViewMode` 0/2/1, new game, dump at frame 20000): first person stereo with the body hidden; over-shoulder stereo with Claude visible; the 3D screen on the cinema screen in 3D. 72 fps in all three | device, unattended |
+| The View toggle in play, the held chase view through car entry | host build, not worn |
+| Head-relative movement and head aim (`[vr] head modes: head frame on, head aim on` in first person) | device, unattended (log only; head turns can't be shown with the fixed synthetic head) |
+| Head-driven sniper/M16/rocket cameras | host build, not worn |
 | `VehicleFollowRotation` and its CAR VIEW row | host build, not worn |
-| Menus, loading screens, driving, boats, RC vehicles, pause, audio | not worn; audio is T8 and unchecked |
+| Audio backend comes up (AAudio mixer, 48 kHz); the stereo IMA ADPCM streams (radio, cutscenes) decode bit-exact against macOS `afconvert` | device, unattended; host test |
+| Menus, loading screens, driving, boats, RC vehicles, pause, hearing the audio | not worn |
 | Comfort, performance in gameplay with traffic, colours | not worn |
 
 ## 10. Open items
