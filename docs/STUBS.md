@@ -20,8 +20,8 @@ yet. Each one is picked up by the task named beside it.
 - `VrApplyEyeFov`, `VrCaptureViewWindow`, `VrUpdateFirstPersonAnchor(true)`,
   `VrGetGameplayHudSettings`, `VrGetViewBasis` and the first-person globals
   `gVrHidePlayerBody`, `gVrFirstPersonActive`, `gVrPlayerEntity` are now live
-  (`main.cpp`, `Renderer.cpp`, `WaterLevel.cpp`). Still unread: `gVrInVehicle`
-  and the ped-side hide-body hooks (`CPed::PreRender`), which are T7.
+  (`main.cpp`, `Renderer.cpp`, `WaterLevel.cpp`). `gVrInVehicle` and the ped-side
+  hide-body hooks (`CPed::PreRender`, `CPed::Render`) are read since T7.
 - `VrGameplayHudEnabled`, `VrHudWeaponPanelEnabled`, `VrHudClockEnabled` and
   `VrDistanceFogEnabled` still have no callers (no `Hud.cpp` or fog hook was
   ported in T5).
@@ -31,7 +31,13 @@ yet. Each one is picked up by the task named beside it.
   wraps the alpha atomics in `rw::vulkan::setVehicleAlphaPass`
   (`RenderAlphaAtomics`). Not ported; look at it if cars read as translucent.
 - `androidgame::VrVehicleFollowRotation` reads `[VR] VehicleFollowRotation`
-  (default 0). It is used by the anchor code; there is no menu row for it.
+  (default 0) for the anchor code. It has the CAR VIEW row on the LOCOMOTION page
+  since T7.
+- The `GameplayHud`, `HudWeaponPanel` and `HudClock` settings and their HUD page
+  rows are read and saved, but nothing in the engine acts on them: the HUD is
+  always drawn.
+- `StickCrouch` and the L3 crouch have no GTA III counterpart; the CONTROLS row is
+  gone and the setting is unused.
 - Wrist-panel code in `android_main.cpp` is fenced off by `GTA3VR_WRIST_PANELS`
   (0). It needs the wrist accessors, which are declared under the same flag in
   `android.h` but not defined.
@@ -48,7 +54,9 @@ yet. Each one is picked up by the task named beside it.
 (`FindAspectRatio`; re3 has no `CalculateAspectRatio`), `Sprite2d.{h,cpp}`,
 `Radar.cpp`, `Coronas.cpp`, `WaterLevel.cpp`, `Clouds.cpp`, `Collision.cpp`,
 `PlayerInfo.cpp`, `Frontend.cpp` and `re3.cpp` (island loading HIGH),
-`CutsceneObject.cpp`, plus the compile fixes the plan did not list:
+`CutsceneObject.cpp`, the T7 set (`Ped.cpp`, `PlayerPed.cpp`, `Camera.cpp`,
+`Cam.cpp`, `Pad.cpp`: head movement, head aim, head-driven weapon cameras, body
+hooks, R3 look-behind), plus the compile fixes the plan did not list:
 `ControllerConfig.h`, `Pad.cpp`, `Frontend.cpp`, `Game.cpp`, `re3.cpp` (the
 re3 sources assume GL3 or D3D9 for pad and mouse code, and the old
 `MatFX::envMap*` switches that the Vulkan librw fork replaced with
