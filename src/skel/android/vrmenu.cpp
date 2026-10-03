@@ -298,8 +298,6 @@ enum eVrMainMenuItem {
 	VR_MAIN_LOCOMOTION_SETTINGS,
 	VR_MAIN_CONTROLS,
 	VR_MAIN_ABOUT,
-	// Ends the session and hands the headset back to Steam.
-	VR_MAIN_QUIT,
 	VR_MAIN_ITEM_COUNT
 };
 
@@ -1164,12 +1162,6 @@ VrDebugUpdate(const PadInput &in)
 			}else if(gVrMenuSelection == VR_MAIN_CONTROLS){
 				gVrMenuPage = VR_MENU_PAGE_CONTROLS;
 				gVrControlsSelection = 0;
-			}else if(gVrMenuSelection == VR_MAIN_QUIT){
-				// RsGlobal.quit is what androidgame::WantsToQuit reads; the
-				// game thread then shuts the session down and the process
-				// exits, which hands the headset back to Steam.
-				RsGlobal.quit = TRUE;
-				gVrMenuVisible = false;
 			}else if(gVrMenuSelection == VR_MAIN_ABOUT){
 				gVrMenuPage = VR_MENU_PAGE_ABOUT;
 				gVrWelcomeFirstRun = false;
@@ -1479,7 +1471,7 @@ QuestMainCategoryColour(int item, uint8 *red, uint8 *green, uint8 *blue)
 {
 	static const uint8 colours[VR_MAIN_ITEM_COUNT][3] = {
 		{100,225,255}, {255,205,90}, {90,220,210},
-		{145,200,255}, {170,190,210}, {255,120,120}
+		{145,200,255}, {170,190,210}
 	};
 	*red = colours[item][0]; *green = colours[item][1];
 	*blue = colours[item][2];
@@ -1575,15 +1567,13 @@ DrawQuestSettingsPage(void)
 	strcpy(rows[VR_MAIN_LOCOMOTION_SETTINGS], "LOCOMOTION  < OPEN >");
 	strcpy(rows[VR_MAIN_CONTROLS], "CONTROLS  < OPEN >");
 	strcpy(rows[VR_MAIN_ABOUT], "ABOUT GTA III VR  < OPEN >");
-	strcpy(rows[VR_MAIN_QUIT], "QUIT TO STEAM");
 
 	for(int item = 0; item < VR_MAIN_ITEM_COUNT; item++){
 		DrawFullVrMenuRow(rows[item], 190+item*60, 3,
-			item == gVrMenuSelection, true,
-			item == VR_MAIN_QUIT);
+			item == gVrMenuSelection, true, false);
 		uint8 red, green, blue;
 		QuestMainCategoryColour(item, &red, &green, &blue);
-		if(item != gVrMenuSelection && item != VR_MAIN_QUIT)
+		if(item != gVrMenuSelection)
 			DrawVrMenuText(rows[item], VR_MENU_WIDTH/2,
 				190+item*60, 3, red, green, blue);
 	}
