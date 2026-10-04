@@ -47,6 +47,76 @@ CSprite::CalcScreenCoors(const RwV3d &in, RwV3d *out, float *outw, float *outh, 
 	return true;
 }
 
+#if defined(RW_VULKAN) && defined(__ANDROID__) && MIAMIVR_STEAM_FRAME
+// Rotation applied to a sprite's offsets from its centre, in screen pixels:
+// takes the direction the camera's up lands on in screen space onto the
+// direction world up lands on, so the sprite's own up points to world up.
+static bool gVrRollActive;
+static float gVrRollCos = 1.0f, gVrRollSin = 0.0f;
+
+// The screen-space image of a direction from point p, using the same
+// projection CalcScreenCoors does.
+static bool
+ProjectOffset(const CVector &p, const CVector &dir, float *dx, float *dy)
+{
+	CVector a = TheCamera.m_viewMatrix * p;
+	CVector b = TheCamera.m_viewMatrix * (p + dir);
+	if(a.z < 1.0f || b.z < 1.0f)
+		return false;
+	*dx = b.x/b.z*SCREEN_WIDTH - a.x/a.z*SCREEN_WIDTH;
+	*dy = b.y/b.z*SCREEN_HEIGHT - a.y/a.z*SCREEN_HEIGHT;
+	return true;
+}
+
+void
+CSprite::UpdateVrRoll(bool enabled)
+{
+	if(!enabled){
+		gVrRollActive = false;
+		gVrRollCos = 1.0f;
+		gVrRollSin = 0.0f;
+		return;
+	}
+	// Looking almost straight up or down world up is along the view axis and
+	// has no screen direction; hold what the last good frame had.
+	const CVector fwd = TheCamera.GetForward();
+	if(fwd.x*fwd.x + fwd.y*fwd.y < 0.01f)
+		return;
+	const CVector p = TheCamera.GetPosition() + fwd*10.0f;
+	float ux, uy, rx, ry;
+	if(!ProjectOffset(p, CVector(0.0f, 0.0f, 0.1f), &ux, &uy) ||
+	   !ProjectOffset(p, TheCamera.GetUp()*0.1f, &rx, &ry))
+		return;
+	const float ul = Sqrt(ux*ux + uy*uy);
+	const float rl = Sqrt(rx*rx + ry*ry);
+	if(ul < 0.0001f || rl < 0.0001f)
+		return;
+	ux /= ul; uy /= ul;
+	rx /= rl; ry /= rl;
+	// Rotation that takes (rx,ry) onto (ux,uy).
+	gVrRollCos = rx*ux + ry*uy;
+	gVrRollSin = rx*uy - ry*ux;
+	gVrRollActive = true;
+}
+
+// Counter-rolls the four corners about the sprite centre.
+static void
+ApplyVrRoll(float x, float y, float xs[4], float ys[4])
+{
+	if(!gVrRollActive)
+		return;
+	for(int i = 0; i < 4; i++){
+		const float ox = xs[i]-x, oy = ys[i]-y;
+		xs[i] = x + gVrRollCos*ox - gVrRollSin*oy;
+		ys[i] = y + gVrRollSin*ox + gVrRollCos*oy;
+	}
+}
+#define VR_ROLL_ACTIVE (gVrRollActive)
+#else
+static inline void ApplyVrRoll(float, float, float[4], float[4]) {}
+#define VR_ROLL_ACTIVE (false)
+#endif
+
 #define SPRITEBUFFERSIZE 64
 static int32 nSpriteBufferIndex;
 static RwIm2DVertex SpriteBufferVerts[SPRITEBUFFERSIZE*6];
@@ -103,8 +173,13 @@ CSprite::RenderOneXLUSprite(float x, float y, float z, float w, float h, uint8 r
 	ys[2] = y+h;	vs[2] = 1.0f;
 	ys[3] = y-h;	vs[3] = 0.0f;
 
+	// A rolled sprite is not axis aligned, so the clip below (which also
+	// rewrites the texture coordinates) does not apply; the plane in front of
+	// the head is bigger than the view and clips the quad itself.
+	ApplyVrRoll(x, y, xs, ys);
+
 	// clip
-	for(i = 0; i < 4; i++){
+	for(i = 0; !VR_ROLL_ACTIVE && i < 4; i++){
 		if(xs[i] < 0.0f){
 			us[i] = -xs[i] / (2.0f*w);
 			xs[i] = 0.0f;
@@ -176,6 +251,8 @@ CSprite::RenderOneXLUSprite_Rotate_Aspect(float x, float y, float z, float w, fl
 	ys[2] = y + h*(+c-s);	vs[2] = 1.0f;
 	ys[3] = y + h*(-c-s);	vs[3] = 0.0f;
 
+	ApplyVrRoll(x, y, xs, ys);
+
 	// No clipping, just culling
 	if(xs[0] < 0.0f && xs[1] < 0.0f && xs[2] < 0.0f && xs[3] < 0.0f) return;
 	if(ys[0] < 0.0f && ys[1] < 0.0f && ys[2] < 0.0f && ys[3] < 0.0f) return;
@@ -225,8 +302,13 @@ CSprite::RenderBufferedOneXLUSprite(float x, float y, float z, float w, float h,
 	ys[2] = y+h;	vs[2] = 1.0f;
 	ys[3] = y-h;	vs[3] = 0.0f;
 
+	// A rolled sprite is not axis aligned, so the clip below (which also
+	// rewrites the texture coordinates) does not apply; the plane in front of
+	// the head is bigger than the view and clips the quad itself.
+	ApplyVrRoll(x, y, xs, ys);
+
 	// clip
-	for(i = 0; i < 4; i++){
+	for(i = 0; !VR_ROLL_ACTIVE && i < 4; i++){
 		if(xs[i] < 0.0f){
 			us[i] = -xs[i] / (2.0f*w);
 			xs[i] = 0.0f;
@@ -290,6 +372,8 @@ CSprite::RenderBufferedOneXLUSprite_Rotate_Dimension(float x, float y, float z, 
 	ys[2] = y + c*h - s*w;	vs[2] = 1.0f;
 	ys[3] = y - c*h - s*w;	vs[3] = 0.0f;
 
+	ApplyVrRoll(x, y, xs, ys);
+
 	// No clipping, just culling
 	if(xs[0] < 0.0f && xs[1] < 0.0f && xs[2] < 0.0f && xs[3] < 0.0f) return;
 	if(ys[0] < 0.0f && ys[1] < 0.0f && ys[2] < 0.0f && ys[3] < 0.0f) return;
@@ -341,6 +425,8 @@ CSprite::RenderBufferedOneXLUSprite_Rotate_Aspect(float x, float y, float z, flo
 	ys[1] = y + h*(+c+s);	vs[1] = 1.0f;
 	ys[2] = y + h*(+c-s);	vs[2] = 1.0f;
 	ys[3] = y + h*(-c-s);	vs[3] = 0.0f;
+
+	ApplyVrRoll(x, y, xs, ys);
 
 	// No clipping, just culling
 	if(xs[0] < 0.0f && xs[1] < 0.0f && xs[2] < 0.0f && xs[3] < 0.0f) return;
@@ -394,6 +480,8 @@ CSprite::RenderBufferedOneXLUSprite_Rotate_2Colours(float x, float y, float z, f
 	ys[1] = y + h*(+c+s);	vs[1] = 1.0f;
 	ys[2] = y + h*(+c-s);	vs[2] = 1.0f;
 	ys[3] = y + h*(-c-s);	vs[3] = 0.0f;
+
+	ApplyVrRoll(x, y, xs, ys);
 
 	// No clipping, just culling
 	if(xs[0] < 0.0f && xs[1] < 0.0f && xs[2] < 0.0f && xs[3] < 0.0f) return;

@@ -68,8 +68,9 @@ in `android/`, or `tools/steam_frame/build.sh`.
   waits for time cannot hang.
 - When nothing renders, the sim does not step (`shouldRender=false`, standby).
   `force_render` exists for that reason (section 8).
-- Reference space is STAGE, falling back to LOCAL. A VIEW space carries the
-  head-locked menu quad.
+- Reference space is STAGE, falling back to LOCAL. The VR menu quad is
+  world-locked in that space with a yaw-only anchor; the compact debug
+  overlay follows yaw and pitch only. Nothing is head-locked in roll.
 - The pad is injected at one seam: `CPad::UpdatePads` calls `CapturePad(0)` in
   `android.cpp`, which also updates the first-person anchor.
 
@@ -86,6 +87,7 @@ and builds, but nothing has exercised it.
 | Player body | Hidden on foot in first person (`gVrHidePlayerBody`); shown in both third-person views, in cars, and in scripted scenes | done on foot; the rest carried |
 | Driver head in first person | `CPed::PreRender` collapses the occupant's head while the eye sits inside it | carried (T7) |
 | HUD (Im2D) | Projected per eye onto a plane inside the multiview pass, `HudDistanceCm` out (the plane is sized from it, so the angular size does not change); safe-area transform; always drawn. `SetVrHudLayout` in `main.cpp` sets it for both 2D passes (before and after the fade) from the mode the frame was prepared with | done for the plane; the distance and the after-fade pass are host build, not worn |
+| Roll-free HUD and billboards | Standard section 3 and 4: nothing rolls with the head. The HUD plane (`im2dWorld`) is built from the head's yaw and pitch only (`rollFreeOrientation` in `xr_vulkan_session.cpp`, so the crosshair and sniper and rocket sights stay upright; their centre is still the head's forward). World sprites (coronas, flares, the aim marker, particles: vertices carrying a real camera depth) take a second plane, `im2dSpriteWorld`, the full head frame the game projected them through, so they land on their source in both eyes (`rw::vulkan::setIm2DSpriteTransform`, `scene.im2dSpriteTransform`, picked per vertex in `rw_im2d.vert`). The sprite emitters in `Sprite.cpp` counter-rotate their four corners about the centre by the head roll, computed once per frame in `CSprite::UpdateVrRoll` (angle between the screen image of the camera's up and of world up, through the same projection `CalcScreenCoors` uses). Clipping is skipped while rolled. Held at the last value when looking within about 6 degrees of straight up or down. Off in theater mode. The startup log has `[vr] roll-free billboards/HUD` | host build, not worn |
 | Radar | Vice City's 24-gon tile clipping in place of the depth mask, which fails under Adreno multiview. The tiles carry the map in their alpha channel (the device log shows one RGB colour per tile, 8888, stream alpha flag set), so they have to be blended: RenderWare blends any raster that carries alpha even with vertex alpha off, but librw's Vulkan Im2D path blends on vertex alpha alone, so they were drawn opaque and flat. `DrawRadarMap` turns vertex alpha on for the tiles. Each tile logs a `[radar]` line when it streams in | device, unattended (2026-10-04): the minimap shows the road layout, the land in orange and the roads see-through; the `[radar]` lines confirm 32-bit 128x128 tiles with one colour and the map in alpha. Not yet worn |
 | Coronas | Compact, no streaks, reflection `recipz`, headlight/streak types folded to normal | done |
 | Water | `WaterViewForward()` (the headset's forward, not the character's) | done |
@@ -94,7 +96,7 @@ and builds, but nothing has exercised it.
 | Cutscenes, CINEMA 3D | The screen is submitted as a projection layer. Each eye has the screen's orientation and a FOV that exactly fits its rectangle. The camera is split into two parallel off-axis cameras converged 1.5 m ahead, depth 0.35 / 0.55 / 0.75 for SUBTLE / default / DEEP. Applies to formal cutscenes and to scripted widescreen scenes (GTA III holds `playingIntro` through the whole opening, so the predicate lets camera shots through and keeps the gaps flat) | done |
 | 3D SCREEN gameplay | The stock camera on the theater screen with the cutscene setting's 3D depth (`VrScreenGameplayActive`) | carried (T7) |
 | Stereo cutscenes | Staged cameras selectable per scene (R3 cycles, L3 keeps). `VrCutsceneCameraActor` is not read by `CCutsceneObject` yet, so the camera actor's head is not collapsed | carried; T6 left open |
-| VR menu and debug overlay | 1024x768 head-locked quad layer in VIEW space | carried (the menu is the Vice City one, cut down; see STUBS) |
+| VR menu and debug overlay | 1024x768 quad layer, 1.65 m out, world-locked with a yaw-only anchor taken when the menu opens and on recentre (eye height at that moment); the compact debug overlay follows yaw and pitch only. Never rolls | carried (the menu is the Vice City one, cut down; see STUBS) |
 | Dynamic lights, car reflections | An empty light list is handed to the backend | stubbed |
 | Windscreen alpha pass | Not ported. Look at it if cars read as translucent | not done |
 | Wrist panels | Off (`GTA3VR_WRIST_PANELS` 0) | not in stage 1 |

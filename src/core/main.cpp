@@ -18,6 +18,7 @@
 #include "Sprite2d.h"
 #include "Renderer.h"
 #include "Coronas.h"
+#include "Sprite.h"
 #include "WaterLevel.h"
 #include "Weather.h"
 #include "Glass.h"
@@ -265,6 +266,14 @@ DoRWStuffStartOfFrame_Horizon(int16 TopRed, int16 TopGreen, int16 TopBlue, int16
 		return false;
 
 	TheCamera.m_viewMatrix.Update();
+#if defined(RW_VULKAN) && defined(__ANDROID__) && MIAMIVR_STEAM_FRAME
+	// The view matrix now carries the head frame; work out how far the head
+	// is rolled so world sprites can stay upright. See CSprite::UpdateVrRoll.
+	{
+		extern bool VrWorldSpritesCanRoll(void);
+		CSprite::UpdateVrRoll(VrWorldSpritesCanRoll());
+	}
+#endif
 #if defined(RW_VULKAN) && defined(__ANDROID__)
 	// The sky gradient is drawn as full-screen 2D quads, which in the headset
 	// end up on the floating HUD plane. Feed the sky colour to the backend as

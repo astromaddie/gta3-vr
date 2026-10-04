@@ -259,4 +259,5 @@ Short version. The full table is in VR_ARCHITECTURE.md.
 | Third person (both styles), head-relative movement, head aim, scope cameras, CAR VIEW | builds, not run |
 | Minimap shows the map after the tile blending fix; the in-car layout | builds, not run |
 | The over-shoulder view staying on Claude through car entry and exit; third person turning to walk; DRAW DISTANCE; HUD DISTANCE; help box and mission title on the HUD plane | builds, not worn (second wear findings, 2026-10-04) |
+| Nothing rolls with the head: HUD, crosshair, sights, coronas, flares and particles stay upright; the VR menu is world-locked and yaw-only (`[vr] roll-free billboards/HUD` in the log) | host build, not worn. Check by tilting the head |
 | Menus, boats, audio, comfort, performance with traffic | not tried |

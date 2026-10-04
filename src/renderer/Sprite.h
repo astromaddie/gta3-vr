@@ -8,6 +8,14 @@ class CSprite
 	static float m_fRecipNearClipPlane;
 	static int32 m_bFlushSpriteBufferSwitchZTest;
 public:
+#if defined(RW_VULKAN) && defined(__ANDROID__) && MIAMIVR_STEAM_FRAME
+	// Head roll for world sprites (standard.md section 4: billboards turn
+	// about world up only). The camera is the headset, so projected sprites
+	// tilt with the head; the emitters below counter-rotate their corners
+	// about the sprite centre so the glow stays upright. Update once per
+	// frame after the view matrix is current; enabled = false clears it.
+	static void UpdateVrRoll(bool enabled);
+#endif
 	static float CalcHorizonCoors(void);
 	static bool CalcScreenCoors(const RwV3d &in, RwV3d *out, float *outw, float *outh, bool farclip);
 	static void InitSpriteBuffer(void);
