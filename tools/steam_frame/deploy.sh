@@ -6,17 +6,27 @@
 #
 #   --apk FILE         the Frame APK (default: this checkout's assembleFrame
 #                      output, android/app/build/outputs/apk/frame/app-frame.apk)
+#   Game data. The easy way: install GTA III (app 12100) from Steam on the
+#   Frame. The game reads it in place from the Steam library, so nothing has
+#   to be copied. Failing that it uses a copy in ~/Documents/GTA3VR/gamedata,
+#   which is what these two options make:
 #   --game-dir DIR     your GTA III PC installation: copies data TEXT anim txd
 #                      models audio mp3 skins movies (and gta3.ini), then this
 #                      repo's gamefiles/, to the headset's
 #                      ~/Documents/GTA3VR/gamedata (rsync over SSH; about
 #                      1.3 GB the first time)
-#   --from-steam       the same, from the Steam PC version installed on the
-#                      Frame itself (app 12100; the folder comes from the
-#                      appmanifest's installdir, "Grand Theft Auto 3"); the
-#                      copy runs on the headset
-#   --port-assets      copy only this repo's gamefiles/ (re3's text, frontend
-#                      art, scripts and neo/ files) over the retail data
+#   --from-steam       install the game from Steam on the Frame; no copy needed
+#                      (the game reads it in place). --from-steam still copies
+#                      it into Documents as a fallback (app 12100; the folder
+#                      comes from the appmanifest's installdir, "Grand Theft
+#                      Auto 3"; the copy runs on the headset)
+#
+#   Port files. The game always reads re3's own files (text, frontend art,
+#   scripts and neo/ files, this repo's gamefiles/) from Documents, never
+#   from Steam, so they are installed with every deploy that installs an APK
+#   (the APK is built against the matching list):
+#   --port-assets      install them without anything else
+#   --no-port-assets   skip them on an install
 #   --register-title   register ~/devkit-game/GTA3VR as a persistent Steam
 #                      library title (once). When the title exists, every
 #                      install also refreshes its copy of the APK.
@@ -73,6 +83,7 @@ adb_bin="${ADB:-${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb}"
 apk=""
 game_dir=""
 port_assets=0
+no_port_assets=0
 from_steam=0
 register=0
 install=1
@@ -93,6 +104,7 @@ while (($#)); do
 	--game-dir) game_dir="$2"; shift 2 ;;
 	--from-steam) from_steam=1; shift ;;
 	--port-assets) port_assets=1; shift ;;
+	--no-port-assets) no_port_assets=1; shift ;;
 	--register-title) register=1; shift ;;
 	--no-install) install=0; shift ;;
 	--no-launch) launch=0; shift ;;
@@ -119,8 +131,9 @@ copy_port_assets() {
 	local files="$repo/gamefiles"
 	[[ -f "$files/TEXT/american.gxt" && -f "$files/models/x360btns.txd" ]] \
 		|| die "$files lacks re3's assets (TEXT/american.gxt, models/x360btns.txd)"
-	# re3's text, frontend art, scripts and neo/ files over the retail files.
-	# Without them the custom option labels and button art are missing.
+	# re3's text, frontend art, scripts and neo/ files. The game reads these
+	# from here even when the retail data comes from Steam. Without them the
+	# custom option labels and button art are missing.
 	ssh_frame "mkdir -p ~/$data/gamedata && chmod 777 ~/$data ~/$data/gamedata"
 	rsync -rt --chmod=Du=rwx,Dgo=rwx,Fu=rw,Fgo=rw "$files/" "$frame_host:$data/gamedata/"
 	echo "re3 gamefiles in ~/$data/gamedata ($(cd "$files" && ls | tr '\n' ' '))"
@@ -150,7 +163,7 @@ if [[ -n "$game_dir" ]]; then
 	else
 		echo "note: $game_dir has no gta3.ini; the game will use its defaults"
 	fi
-	copy_port_assets
+	port_assets=1
 elif ((from_steam)); then
 	# Copy on the headset: Steam's install is outside ~/Documents, which is
 	# all Lepton can see. The folder name comes from the appmanifest's
@@ -185,9 +198,20 @@ else
 	echo "note: $src has no gta3.ini; the game will use its defaults"
 fi
 SH
+	port_assets=1
+fi
+
+# re3's own files. Installed by default with the APK (they belong together),
+# or on request. When it is only the default, a headset we cannot reach over SSH
+# is a warning, not a failure: the install itself goes over adb.
+if ((port_assets)); then
 	copy_port_assets
-elif ((port_assets)); then
-	copy_port_assets
+elif ((!no_port_assets && (install || register))); then
+	if ssh_frame true 2>/dev/null; then
+		copy_port_assets
+	else
+		echo "warning: cannot reach $frame_host over SSH; re3's gamefiles were not refreshed (use --port-assets)" >&2
+	fi
 fi
 
 # ---- Unattended-test switches (vr-diag.ini in the data folder) ---------------

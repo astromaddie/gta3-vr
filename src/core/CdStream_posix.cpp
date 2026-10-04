@@ -212,7 +212,15 @@ CdStreamInit(int32 numChannels)
 {
 	struct statvfs fsInfo;
 
+#if GTA3VR_GAMEDATA
+	// Only the block size is wanted, so any file on the data's filesystem will
+	// do; gta3.img is where the game data is read from (Steam or the copy).
+	char fsPath[PATH_MAX];
+	gamedata::resolve("models/gta3.img", false, fsPath, sizeof(fsPath));
+	if((statvfs(fsPath, &fsInfo)) < 0)
+#else
 	if((statvfs("models/gta3.img", &fsInfo)) < 0)
+#endif
 	{
 		CDTRACE("can't get filesystem info");
 		ASSERT(0);
@@ -261,7 +269,11 @@ GetGTA3ImgSize(void)
 	struct stat statbuf;
 
 	char path[PATH_MAX];
+#if GTA3VR_GAMEDATA
+	gamedata::resolve(gImgNames[0], false, path, sizeof(path));
+#else
 	realpath(gImgNames[0], path);
+#endif
 	if (stat(path, &statbuf) == -1) {
 		// Try case-insensitivity
 		char* real = casepath(gImgNames[0], false);
@@ -555,7 +567,14 @@ CdStreamAddImage(char const *path)
 	ASSERT(path != nil);
 	ASSERT(gNumImages < MAX_CDIMAGES);
 
+#if GTA3VR_GAMEDATA
+	// The .img files are retail data: the Steam install, else the copy.
+	char gamePath[PATH_MAX];
+	gamedata::resolve(path, false, gamePath, sizeof(gamePath));
+	gImgFiles[gNumImages] = open(gamePath, _gdwCdStreamFlags);
+#else
 	gImgFiles[gNumImages] = open(path, _gdwCdStreamFlags);
+#endif
 
 	// Fix case sensitivity and backslashes.
 	if (gImgFiles[gNumImages] == -1) {

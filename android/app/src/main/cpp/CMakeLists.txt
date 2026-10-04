@@ -203,6 +203,21 @@ if(NOT MIAMIVR_BRINGUP)
 	               "${CMAKE_CURRENT_BINARY_DIR}/GitSHA1.cpp" @ONLY)
 	list(APPEND GAME_SOURCES "${CMAKE_CURRENT_BINARY_DIR}/GitSHA1.cpp")
 
+	# The files this port adds to or replaces in the retail folders (the
+	# repo's gamefiles/). The Steam Frame build reads those from Documents
+	# and everything else in the retail folders from the Steam install; see
+	# src/skel/android/GameData.h. The list is compiled in, so it always
+	# matches the gamefiles/ the APK was built from.
+	file(GLOB_RECURSE GAMEFILES_LIST CONFIGURE_DEPENDS
+	     RELATIVE "${RE3_ROOT}/gamefiles" "${RE3_ROOT}/gamefiles/*")
+	list(SORT GAMEFILES_LIST)
+	set(GAMEFILES_MANIFEST "")
+	foreach(f ${GAMEFILES_LIST})
+		string(APPEND GAMEFILES_MANIFEST "\t\"${f}\",\n")
+	endforeach()
+	file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/gamefiles_manifest.inc"
+	     CONTENT "@GAMEFILES_MANIFEST@" @ONLY)
+
 	list(APPEND MIAMIVR_SOURCES ${GAME_SOURCES})
 
 	foreach(d ${GAME_DIRS} "")
@@ -211,6 +226,8 @@ if(NOT MIAMIVR_BRINGUP)
 	list(APPEND GAME_INCLUDES "${RE3_ROOT}/src")
 	# The skeleton reaches into the app layer for the storage roots.
 	list(APPEND GAME_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}")
+	# gamefiles_manifest.inc
+	list(APPEND GAME_INCLUDES "${CMAKE_CURRENT_BINARY_DIR}")
 endif()
 
 # Steam Frame: the shared sfvr library (system layer, haptics, [vr-perf]),
@@ -266,6 +283,7 @@ if(NOT MIAMIVR_BRINGUP)
 		"${CMAKE_CURRENT_SOURCE_DIR}/platform_android.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/frame_diag.cpp"
 		"${RE3_ROOT}/src/skel/android/android.cpp"
+		"${RE3_ROOT}/src/skel/android/GameData.cpp"
 		"${RE3_ROOT}/src/skel/android/vrmenu.cpp"
 		"${RE3_ROOT}/src/skel/android/QuestProfiler.cpp"
 		"${RE3_ROOT}/src/audio/sampman_android.cpp")

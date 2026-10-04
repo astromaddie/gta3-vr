@@ -36,10 +36,71 @@ properties of the headset, so they carry over unchanged.
 | Swapchain | one image, `arraySize = 2`, multiview; an sRGB image is created mutable-format and rendered through a UNORM view | as the Vice City port |
 | API version | OpenXR 1.0 requested (1.1 retried if refused) | every Frame-proven port asks for 1.0 |
 | Data root | `/sdcard/Documents/GTA3VR` in Lepton, `~/Documents/GTA3VR` on the headset | `android_main.cpp` |
+| Steam library inside Lepton | `/home/steamos/.local/share/Steam` and its `steamapps` are visible at the same paths, world-readable, not writable by the app. `/sdcard/Documents` is a symlink to `/home/steamos/Documents` | device check on another port, 2026-10-04 |
 | Native library | `libgta3vr.so`, one target holding the game, librw (Vulkan) and the app layer | `CMakeLists.txt` |
 
 The headtracking feature is why the Frame manifest exists: a manifest that
 requires it would not install in Lepton. This port has no Quest variant (D7).
+
+## 1a. Game data sources
+
+The game reads its retail data from the Steam install on the Frame when there
+is one, and from a copy in `Documents/GTA3VR/gamedata` otherwise. At start-up
+(`gamedata::init`, `src/skel/android/GameData.cpp`) it parses
+`steamapps/libraryfolders.vdf` for the library paths, reads
+`appmanifest_12100.acf` for `installdir` ("Grand Theft Auto 3") and its
+`StateFlags` (it must say installed, bit 4), and checks that `models/gta3.img`,
+`models/gta3.dir` and `data/gta3.dat` are readable, matching names without
+regard to case. The log says which one won, once:
+
+```
+[vr] game data: steam <folder>
+[vr] game data: Documents copy <folder> (no Steam install of app 12100 found)
+[vr] game data overlay: <folder> (port files, settings, saves, caches)
+```
+
+Reads then resolve in this order:
+
+1. **Port files** from Documents: the files in this repo's `gamefiles/` (re3's
+   text, frontend art, scripts, `neo/`). CMake lists them into the build, so the
+   APK always knows which files it expects there. `deploy.sh` installs them.
+2. **Everything else in the retail folders** (`data TEXT anim txd models audio
+   mp3 skins movies`) from the Steam install.
+3. **The Documents copy**, for anything the above did not find. This is the
+   fallback, and it is the old behaviour: with no Steam install nothing
+   changes.
+
+Anything outside those folders (`re3.ini`, `gta3.ini`, `vr_settings.ini`, caches)
+is read from Documents first. **All writes land in Documents**, whatever the
+file is called: the process's working directory stays there, saves go to
+`userfiles/`, and the temporary files for the radio and mission-dialogue
+streams go to the storage root. The Steam folder is never written.
+
+The game changes directory constantly (`CFileMgr::SetDir("DATA")` and the
+like), so `mychdir` no longer really changes it on the Frame; it records the
+game's current folder and every read is resolved against that. Every route to
+a file goes through `gamedata::resolve`:
+
+| Reader | Where |
+| --- | --- |
+| `CFileMgr` (`.dat`, `.ini`, `.gxt`, `.scm`, `.dir`, saves) | `fcaseopen` in `crossplatform.cpp` |
+| `.img` archives, and the block size from `statvfs` | `CdStreamAddImage`, `GetGTA3ImgSize`, `CdStreamInit` |
+| librw streams (`.txd`, `.dff`, `.col`, `.ifp`) and BMP/PNG images | `RwStreamOpen`, `RtBMPImageRead` and friends in `fakerw/fake.cpp` |
+| Folder listing (`skins/*.bmp`) | `FindFirstFile`: Documents' folder if it has one, else Steam's |
+| `sfx.SDT`, `sfx.RAW`, radio and mission streams | `platform::resolveGamePathCaseInsensitive` |
+
+The radio and cutscene streams are handed to Android's `MediaPlayer` by path,
+so if it cannot open a file in the Steam folder the app copies that one stream
+under the storage root and tries again (`[vr] MediaPlayer could not open ...
+in place; using a copy`). librw's own image-path search (`RwImageSetPath`) is
+not used by this game, so it is not redirected.
+
+Verified: the resolver, library discovery and the order above by a host test
+(`tools/steam_frame/tests/run_gamedata_test.sh`, a fake library in a temp
+folder), and the APK builds. The Steam-in-place path is not device-verified.
+The fallback path is what runs today, because GTA III is not installed in
+Steam on the Frame; it has not been re-run on the device since this change
+either.
 
 ## 2. Build flag and guards
 
@@ -47,6 +108,7 @@ requires it would not install in Lepton. This port has no Quest variant (D7).
 | --- | --- |
 | `MIAMIVR_STEAM_FRAME` | Frame-only code. CMake option, set by the Gradle build type `frame`, defined 0 or 1 for every target through librw's public definitions. The names keep the Vice City prefix so fixes cherry-pick between the ports (D6) |
 | `RW_VULKAN && __ANDROID__` | Every engine (re3) change. The desktop builds compile as before |
+| `GTA3VR_GAMEDATA` | `GameData.h`: the three above plus `MIAMIVR_STEAM_FRAME` and not `MIAMIVR_BRINGUP`. The engine's game-data redirects (`fcaseopen`, `mychdir`, CdStream, `RwStreamOpen`, `FindFirstFile`) test it |
 | `MIAMIVR_DEV_TOOLS` | Developer diagnostics. Off unless `-PmiamivrDevTools=true`. librw tests it, so it stays |
 | `MIAMIVR_BRINGUP` | The OpenXR/Vulkan bring-up target with no game. Off in the Frame build |
 | `GTA_VR_WEAPONS` | Tracked hands and physical weapons. Never defined here (stage 2) |
@@ -327,6 +389,7 @@ driven by `vr-diag.ini`), **not worn** (nobody has played it).
 | Head-driven sniper/M16/rocket cameras | host build, not worn |
 | `VehicleFollowRotation` and its CAR VIEW row | host build, not worn |
 | Audio backend comes up (AAudio mixer, 48 kHz); the stereo IMA ADPCM streams (radio, cutscenes) decode bit-exact against macOS `afconvert` | device, unattended; host test |
+| Game data from the Steam install in place, Documents copy as the fallback (section 1a): library discovery, read order, writes in Documents | host build and host test. Not device-verified: the fallback is what runs today, GTA III is not installed in Steam on the Frame |
 | Menus, loading screens, boats, RC vehicles, pause, hearing the audio | not worn |
 | Driving (first wear: it drove, with the problems above) | worn once |
 | Comfort, performance in gameplay with traffic, colours | not worn |

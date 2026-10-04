@@ -3,7 +3,8 @@
 This is GTA III (re3) running natively on the Steam Frame as an Android app in
 Lepton, the Android 11 container the Frame uses. It draws in stereo with
 OpenXR and Vulkan, so there is no PC involved. You need your own copy of GTA
-III, either on the Frame through Steam (app 12100) or on a PC.
+III. The easy way is to install it on the Frame through Steam (app 12100); the
+game reads it from there and there is nothing to copy. A PC install works too.
 
 It is early. It boots, starts a new game and renders in stereo. It has been worn
 twice. The first time the minimap showed no roads and the in-car buttons were
@@ -42,30 +43,48 @@ longer.
 ## 2. Install
 
 Do this once. Start **Lepton Development** from the Frame's Steam library (adb
-runs over it). Then, if GTA III is installed on the Frame from Steam:
+runs over it). Install GTA III from Steam on the Frame if you haven't, then:
 
 ```sh
-tools/steam_frame/deploy.sh --from-steam --register-title
+tools/steam_frame/deploy.sh --register-title
 ```
 
-Or, with a PC install of the game on your Mac or Linux box:
+That is all the game data needs. The game looks for GTA III in the Steam
+library when it starts and reads it in place, so nothing is copied. (Lepton can
+see Steam's folder but can't write to it, which is fine: saves and settings go
+to Documents.)
+
+If GTA III isn't installed in Steam on the Frame, the game uses a copy of the
+data in `~/Documents/GTA3VR/gamedata` instead. Make one from a PC install on your
+Mac or Linux box:
 
 ```sh
 tools/steam_frame/deploy.sh --game-dir "/path/to/Grand Theft Auto 3" --register-title
 ```
 
-What that does:
+`--from-steam` also still works. It copies the Steam install into Documents on
+the headset, as a fallback. You don't need it any more. A copy you already made
+keeps working: when both exist the game prefers Steam, and uses the copy for
+anything Steam doesn't have.
 
-- Copies the folders the game reads (`data TEXT anim txd models audio mp3 skins
-  movies`, and `gta3.ini`) to `~/Documents/GTA3VR/gamedata` on the headset.
-  `--from-steam` runs the copy on the Frame, because Lepton cannot see Steam's
-  install folder.
-- Copies this repo's `gamefiles/` over the top. Those are re3's own text,
-  frontend art and scripts, and without them the option labels and button art
-  are missing.
+What a deploy does:
+
+- Installs this repo's `gamefiles/` into `~/Documents/GTA3VR/gamedata`. Those
+  are re3's own text, frontend art and scripts, and without them the option
+  labels and button art are missing. The game always reads them from Documents,
+  never from Steam, so every deploy that installs an APK refreshes them (they
+  are tied to the build). `--port-assets` does just that step, and
+  `--no-port-assets` skips it.
 - Installs the APK in Lepton Development.
 - Registers a persistent **GTA3VR** title in the Steam library (that's the
   `--register-title` part, only needed the first time).
+- With `--game-dir` or `--from-steam`, first copies the folders the game reads
+  (`data TEXT anim txd models audio mp3 skins movies`, and `gta3.ini`) into
+  Documents.
+
+To see which one the game picked, look for `[vr] game data:` in the log. It says
+either `steam <folder>` or `Documents copy <folder> (no Steam install of app
+12100 found)`.
 
 Saves go to `~/Documents/GTA3VR/userfiles` and settings to
 `gamedata/vr_settings.ini`. Both survive a Lepton reset.
@@ -260,4 +279,5 @@ Short version. The full table is in VR_ARCHITECTURE.md.
 | Minimap shows the map after the tile blending fix; the in-car layout | builds, not run |
 | The over-shoulder view staying on Claude through car entry and exit; third person turning to walk; DRAW DISTANCE; HUD DISTANCE; help box and mission title on the HUD plane | builds, not worn (second wear findings, 2026-10-04) |
 | Nothing rolls with the head: HUD, crosshair, sights, coronas, flares and particles stay upright; the VR menu is world-locked and yaw-only (`[vr] roll-free billboards/HUD` in the log) | host build, not worn. Check by tilting the head |
+| Reading the game from the Steam install in place, falling back to the copy in Documents | host build and a host test of the lookup. The Steam path has not been tried on the headset. The fallback is what runs today, because GTA III isn't installed in Steam on the Frame right now |
 | Menus, boats, audio, comfort, performance with traffic | not tried |

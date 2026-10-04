@@ -199,6 +199,13 @@ static myFILE myfiles[NUMFILES];
 // Case-insensitivity on linux (from https://github.com/OneSadCookie/fcaseopen)
 void mychdir(char const *path)
 {
+#if GTA3VR_GAMEDATA
+	// The working directory stays in Documents, where everything is written.
+	// The game's own "current folder" is only remembered, so reads can still
+	// pick the Steam install or Documents per file. See GameData.h.
+	gamedata::changeDir(path);
+	return;
+#endif
 	char* r = casepath(path, false);
     if (r) {
         chdir(r);

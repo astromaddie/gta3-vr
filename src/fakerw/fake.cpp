@@ -378,7 +378,16 @@ RwStream *RwStreamOpen(RwStreamType type, RwStreamAccessType accessType, const v
 		StreamFile fakefile;
 		file = rwNewT(StreamFile, 1, 0);
 		memcpy(file, &fakefile, sizeof(StreamFile));
-#ifndef _WIN32
+#if GTA3VR_GAMEDATA
+		{
+			char gamePath[PATH_MAX];
+			gamedata::resolveForMode((const char*)pData, mode, gamePath, sizeof(gamePath));
+			if (file->open(gamePath, mode))
+				return file;
+		}
+		rwFree(file);
+		return nil;
+#elif !defined(_WIN32)
 		char *r = casepath((char*)pData);
 		if (r) {
 			if (file->open((char*)r, mode)) {
@@ -930,6 +939,14 @@ RpHAnimHierarchy *RpSkinAtomicGetHAnimHierarchy( const RpAtomic *atomic ) { retu
 RwImage *
 RtBMPImageWrite(RwImage *image, const RwChar *imageName)
 {
+#if GTA3VR_GAMEDATA
+	{
+		char gamePath[PATH_MAX];
+		gamedata::resolve(imageName, true, gamePath, sizeof(gamePath));
+		rw::writeBMP(image, gamePath);
+		return image;
+	}
+#endif
 #ifndef _WIN32
 	char *r = casepath(imageName);
 	if (r) {
@@ -947,6 +964,13 @@ RtBMPImageWrite(RwImage *image, const RwChar *imageName)
 RwImage *
 RtBMPImageRead(const RwChar *imageName)
 {
+#if GTA3VR_GAMEDATA
+	{
+		char gamePath[PATH_MAX];
+		gamedata::resolve(imageName, false, gamePath, sizeof(gamePath));
+		return rw::readBMP(gamePath);
+	}
+#endif
 #ifndef _WIN32
 	RwImage *image;
 	char *r = casepath(imageName);
@@ -967,6 +991,14 @@ RtBMPImageRead(const RwChar *imageName)
 RwImage *
 RtPNGImageWrite(RwImage *image, const RwChar *imageName)
 {
+#if GTA3VR_GAMEDATA
+	{
+		char gamePath[PATH_MAX];
+		gamedata::resolve(imageName, true, gamePath, sizeof(gamePath));
+		rw::writePNG(image, gamePath);
+		return image;
+	}
+#endif
 #ifndef _WIN32
 	char *r = casepath(imageName);
 	if (r) {
@@ -984,6 +1016,13 @@ RtPNGImageWrite(RwImage *image, const RwChar *imageName)
 RwImage *
 RtPNGImageRead(const RwChar *imageName)
 {
+#if GTA3VR_GAMEDATA
+	{
+		char gamePath[PATH_MAX];
+		gamedata::resolve(imageName, false, gamePath, sizeof(gamePath));
+		return rw::readPNG(gamePath);
+	}
+#endif
 #ifndef _WIN32
 	RwImage *image;
 	char *r = casepath(imageName);

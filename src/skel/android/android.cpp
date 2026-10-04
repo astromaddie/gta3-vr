@@ -2016,6 +2016,9 @@ Initialise(const VulkanContext &context, bool *renderTargetStartupFailure)
 	// call site, make the staged data directory the working directory; re3's
 	// existing POSIX casepath/fcaseopen then absorbs the DATA\\GTA_VC.DAT
 	// spelling against a case-sensitive filesystem.
+	// This directory is the writable one (Documents). Reads of the retail data
+	// are redirected to the Steam install when there is one, see GameData.h;
+	// the game's own chdir calls are virtual for the same reason.
 	const char *dataRoot = platform::gameDataRoot();
 	if(dataRoot == nil || dataRoot[0] == '\0' || chdir(dataRoot) != 0){
 		ALOGE("cannot enter game data directory '%s'",

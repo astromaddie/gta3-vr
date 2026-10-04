@@ -56,6 +56,10 @@ FILE *_fcaseopen(char const *filename, char const *mode);
 #define fcaseopen _fcaseopen
 int _caserename(const char *old_filename, const char *new_filename);
 #define caserename _caserename
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+// Steam Frame: game data read from the Steam install, falling back to the copy.
+#include "GameData.h"
+#endif
 #endif
 
 #ifdef RW_GL3

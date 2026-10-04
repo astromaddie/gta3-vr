@@ -38,10 +38,18 @@ HANDLE FindFirstFile(const char* pathname, WIN32_FIND_DATA* firstfile) {
 	
 	// Case-sensitivity and backslashes...
 	// Will be freed at the bottom
+#if GTA3VR_GAMEDATA
+	// A folder of game data: Documents' if it has one, else the Steam install's.
+	char gameFolder[PATH_MAX];
+	char *realFolder = nil;
+	if (gamedata::resolveDir(folder, gameFolder, sizeof(gameFolder)))
+		folder = gameFolder;
+#else
 	char *realFolder = casepath(folder);
 	if (realFolder) {
 		folder = realFolder;
 	}
+#endif
 
 	strncpy(firstfile->folder, folder, sizeof(firstfile->folder));
 
@@ -145,6 +153,13 @@ char *trim(char *s) {
 FILE* _fcaseopen(char const* filename, char const* mode)
 {
     FILE* result;
+#if GTA3VR_GAMEDATA
+    // Reads come from the Steam install or the Documents copy, writes always
+    // go to Documents. See GameData.h.
+    char gamePath[PATH_MAX];
+    gamedata::resolveForMode(filename, mode, gamePath, sizeof(gamePath));
+    return fopen(gamePath, mode);
+#endif
     char* real = casepath(filename);
     if (!real)
         result = fopen(filename, mode);
