@@ -24,6 +24,7 @@
 #include "Text.h"
 #include "Timer.h"
 #include "Camera.h"
+#include "General.h"
 #include "Timecycle.h"
 #include "DMAudio.h"
 #include "MemoryMgr.h"
@@ -623,16 +624,23 @@ bool gVrHidePlayerBody = true;
 // the tracked hands and the physical weapon layer stand down and Vice City's
 // own weapon handling takes over. Read by QuestWeaponVR and vrhands_quest.
 bool gVrThirdPersonOnFoot;
-// The last over-the-shoulder view, held through vehicle enter/exit.
-static CVector gVrChaseHoldHead;
-static CVector gVrChaseHoldForward;
+// The over-the-shoulder view through vehicle enter/exit. The stock camera
+// slides between its vehicle and on-foot positions in that window, so it is not
+// followed; instead the view is built from the player ped itself: the last
+// chase pose, remembered as a heading plus a distance behind and a height above
+// the ped, laid out again from wherever the ped is each frame (smoothed). It
+// therefore stays on Claude while he walks round the car, climbs in or out, and
+// while the car keeps rolling under him. When the window ends the view blends
+// back onto the stock camera over a fraction of a second.
+static CVector gVrChaseHoldHead;      // The pose last shown, world space.
+static CVector gVrChaseHoldForward;   // Its heading as a level unit vector.
+static float gVrChaseHoldBack;        // Metres behind the ped along that heading.
+static float gVrChaseHoldHeight;      // Metres above the ped.
 static bool gVrChaseHoldValid;
-// Set when the held view was taken in a vehicle. Getting out of a moving car
-// takes a couple of seconds and the car keeps rolling, so the held view rides
-// along with it instead of staying where the car left it.
-static const CVehicle *gVrChaseHoldVehicle;
-static CVector gVrChaseHoldVehiclePosition;
-
+static CVector gVrChaseFollow;        // The smoothed follow position.
+static bool gVrChaseFollowing;        // A transition is running.
+static float gVrChaseBlend = 1.0f;    // 0 at the end of a hold, 1 once back on the stock camera.
+static bool gVrChaseLogged;
 // First person on foot with the head modes (MOVEMENT DIRECTION HEAD or HEAD
 // TURN): the anchor frame is the gameplay camera and the stick is turned by the
 // head. Set by VrUpdateFirstPersonAnchor.
@@ -1152,8 +1160,7 @@ VrUpdateFirstPersonAnchor(bool postPhysics)
 	// a player who chose third person to get away from it, so the last chase
 	// view is held still until the transition ends.
 	const bool thirdPersonHold = androidgame::VrThirdPersonShoulder() &&
-		player != nil && !remoteMode && vehicleTransition &&
-		gVrChaseHoldValid;
+		player != nil && !remoteMode && vehicleTransition;
 #else
 	const bool screenGameplay = false;
 	const bool thirdPersonOnFoot = false;
@@ -1187,8 +1194,14 @@ VrUpdateFirstPersonAnchor(bool postPhysics)
 	gVrFirstPersonActive = wantFirstPerson || cinematicCutscene;
 #if MIAMIVR_STEAM_FRAME
 	gVrThirdPersonOnFoot = thirdPersonOnFoot || thirdPersonHold;
-	if(!androidgame::VrThirdPersonShoulder())
+	if(!androidgame::VrThirdPersonShoulder() || !vehicleTransition){
+		gVrChaseFollowing = false;
+		gVrChaseLogged = false;
+	}
+	if(!androidgame::VrThirdPersonShoulder()){
 		gVrChaseHoldValid = false;
+		gVrChaseBlend = 1.0f;
+	}
 #endif
 	gVrPlayerEntity = (CEntity*)player;
 	gVrInVehicle = wantFirstPerson && player->InVehicle() &&
@@ -1355,26 +1368,77 @@ VrUpdateFirstPersonAnchor(bool postPhysics)
 			}
 			head = TheCamera.GetPosition();
 #if MIAMIVR_STEAM_FRAME
-			gVrChaseHoldHead = head;
-			gVrChaseHoldForward = forward;
+			// Coming back from a vehicle transition the view eases from the
+			// last held pose onto the stock camera, so nothing jumps when the
+			// two disagree.
+			if(gVrChaseBlend < 1.0f){
+				if(postPhysics)
+					gVrChaseBlend = Min(1.0f, gVrChaseBlend+
+						CTimer::GetTimeStepInSeconds()/0.5f);
+				const float t = gVrChaseBlend*gVrChaseBlend*
+					(3.0f-2.0f*gVrChaseBlend);
+				const float heldYaw = Atan2(gVrChaseHoldForward.y,
+					gVrChaseHoldForward.x);
+				const float stockYaw = Atan2(forward.y, forward.x);
+				const float yaw = heldYaw+
+					CGeneral::LimitRadianAngle(stockYaw-heldYaw)*t;
+				head = gVrChaseHoldHead+(head-gVrChaseHoldHead)*t;
+				forward = CVector(Cos(yaw), Sin(yaw), 0.0f);
+			}
+			if(gVrChaseBlend >= 1.0f){
+				// The stock view is the shown one again: a transition
+				// continues from it.
+				gVrChaseHoldHead = head;
+				gVrChaseHoldForward = forward;
+				const CVector offset = head-player->GetPosition();
+				gVrChaseHoldBack = Clamp(-(offset.x*forward.x+
+					offset.y*forward.y), 0.5f, 12.0f);
+				gVrChaseHoldHeight = Clamp(offset.z, -1.0f, 6.0f);
+			}
 			gVrChaseHoldValid = true;
-			gVrChaseHoldVehicle = thirdPersonVehicle ?
-				player->m_pMyVehicle : nil;
-			if(gVrChaseHoldVehicle != nil)
-				gVrChaseHoldVehiclePosition =
-					player->m_pMyVehicle->GetPosition();
 #endif
 		}
 #if MIAMIVR_STEAM_FRAME
 		if(thirdPersonHold){
-			head = gVrChaseHoldHead;
+			if(!gVrChaseHoldValid){
+				// The view was switched on in the middle of a transition:
+				// start behind the ped's own heading.
+				CVector pedForward = player->GetForward();
+				pedForward.z = 0.0f;
+				if(pedForward.MagnitudeSqr() < 0.0001f)
+					pedForward = CVector(0.0f, 1.0f, 0.0f);
+				pedForward.Normalise();
+				gVrChaseHoldForward = pedForward;
+				gVrChaseHoldBack = 3.0f;
+				gVrChaseHoldHeight = 1.8f;
+				gVrChaseHoldHead = player->GetPosition()-
+					pedForward*gVrChaseHoldBack+
+					CVector(0.0f, 0.0f, gVrChaseHoldHeight);
+				gVrChaseFollow = gVrChaseHoldHead;
+				gVrChaseHoldValid = true;
+			}
 			forward = gVrChaseHoldForward;
-			// Only the player's own reference is dereferenced: the pointer
-			// kept from before is compared, never followed.
-			if(gVrChaseHoldVehicle != nil &&
-			   player->m_pMyVehicle == gVrChaseHoldVehicle)
-				head += player->m_pMyVehicle->GetPosition() -
-					gVrChaseHoldVehiclePosition;
+			const CVector target = player->GetPosition()-
+				forward*gVrChaseHoldBack+
+				CVector(0.0f, 0.0f, gVrChaseHoldHeight);
+			if(!gVrChaseFollowing){
+				gVrChaseFollowing = true;
+				gVrChaseFollow = gVrChaseHoldHead;
+			}
+			if(postPhysics)
+				gVrChaseFollow += (target-gVrChaseFollow)*
+					(1.0f-expf(-CTimer::GetTimeStepInSeconds()/0.12f));
+			head = gVrChaseFollow;
+			// Where the blend back to the stock camera will start from.
+			gVrChaseHoldHead = head;
+			gVrChaseBlend = 0.0f;
+			if(!gVrChaseLogged){
+				gVrChaseLogged = true;
+				ALOG("[vr] chase follow during transition: back %.1f m, "
+				     "up %.1f m, objective %d state %d",
+				     gVrChaseHoldBack, gVrChaseHoldHeight,
+				     (int)player->m_objective, (int)playerVehicleState);
+			}
 		}
 #endif
 		bool fullVehicleBasis = false;
