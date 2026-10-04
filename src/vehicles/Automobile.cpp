@@ -2242,19 +2242,10 @@ CAutomobile::ProcessControlInputs(uint8 pad)
 {
 	float speed = DotProduct(m_vecMoveSpeed, GetForward());
 
-#if defined(RW_VULKAN) && defined(__ANDROID__)
-	// The stock game holds the handbrake on for as long as the exit button is
-	// down, so a press at speed slides the car to a stop and then gets the
-	// player out. On the headset the exit button (Y) is only ever "get out",
-	// and the handbrake is its own button (A); the player brakes first and
-	// leaves when the car is slow enough (see CPlayerInfo::Process).
-	bIsHandbrakeOn = !!CPad::GetPad(pad)->GetHandBrake();
-#else
 	if(CPad::GetPad(pad)->GetExitVehicle())
 		bIsHandbrakeOn = true;
 	else
 		bIsHandbrakeOn = !!CPad::GetPad(pad)->GetHandBrake();
-#endif
 
 	// Steer left/right
 #ifdef GTA_PC_CONTROLS
