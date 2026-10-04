@@ -164,6 +164,55 @@ The layout follows the game's own controller setup. These are the buttons for
 the default one (CONFIG 1); the other three keep the same actions on the pad
 buttons they use, so the table above holds in all of them.
 
+### Pointing at menus
+
+Host build, not worn. In the game's own menus (main menu, pause, options) and
+in the VR menu, the right controller's aim ray works like a mouse. You see a thin
+beam from the controller and a dot where it lands (cyan, amber while the trigger
+is down). If the ray misses everything the beam still shows, 1.5 m long and
+without a dot, so you can find the screen. In play and in cutscenes there is
+nothing to point at and no pointer.
+
+- **Always on top.** The beam and dot are two small alpha-blended quad layers
+  submitted last, after the screen and the VR menu panel, so SteamVR draws them
+  over everything. Layer order each frame: world or the theater screen, the VR
+  menu panel when it is open, beam, dot. They are never drawn into the eye
+  picture.
+- **The game's menus.** The ray is tested against the theater screen quad as
+  submitted, and the hit becomes a pixel of the game's screen
+  (`u * RsGlobal.width`, `v * RsGlobal.height`, the same mapping the 2D plane
+  uses). That pixel goes into the PC frontend's mouse position
+  (`CMenuManager::m_nMouseTempPosX/Y`), and the trigger is the left button in
+  `CPad`'s mouse state (`CPad::UpdateMouse`). So hovering highlights an item the
+  way a mouse does, a click selects it, and sliders follow the mouse's X. The
+  right stick scrolls, as a mouse wheel. The game's own mouse sprite is not drawn
+  while the ray is on the screen, because the dot is the cursor and two would
+  double up (the map crosshair still follows it).
+- **Pad still works.** A, B, the left stick and the D-pad are untouched. While
+  you use them the cursor holds still, so a shaky hand does not pull the
+  highlight back; the ray has to move a good way, or you click, to take over
+  again. With the ray on the screen the right trigger is only the mouse click, so
+  it does not also press Cross.
+- **The VR menu.** The ray is tested against the panel as submitted and the hit
+  becomes a row of the page. Hovering a row selects it (only when the row
+  changes, so the left stick keeps working). A trigger click in the middle of a
+  row does what A does. On the outer 16% at either side it steps the value down
+  (left) or up (right), and holding it repeats the way L2 and R2 do. While the ray
+  is on the panel the right trigger is the click and not R2 "plus"; L2 still steps
+  down. Every page registers its row layout where it draws. ABOUT closes on any
+  click.
+- **Nearest hit wins** between the screen and the panel. The log says
+  `[ui.pointer] target=frontend|vrmenu|none` when it changes.
+- **Feel.** The trigger clicks with hysteresis (down at 0.6, up at 0.45). A hover
+  change buzzes the right hand 0.2 for 10 ms and a click 0.5 for 30 ms. There is
+  no haptics-scale setting in this port yet, so they are unscaled.
+
+What to check on the headset: the beam over the VR menu, over the 3D screen and
+over the pause menu; the dot on the row you aim at; clicking menu items and
+sliders; that the D-pad and A still move the highlight with the ray resting on
+the screen; that only one cursor shows. Unattended, `diag_pointer` below parks a
+synthetic ray on a menu item.
+
 ### Views
 
 Open the VR menu and go to LOCOMOTION, then VIEW.
@@ -239,9 +288,26 @@ remove them with `--diag-reset` before you play for real:
 | --- | --- | --- |
 | `force_render` | 0 | Render and step the game anyway. A synthetic head stands at 1.6 m, eyes 64 mm apart |
 | `diag_yaw` | 0 | Yaw of that head in degrees (positive turns left) |
-| `dump_frame` | 0 | On the Nth rendered frame, write `vr-dumps/vr-eye0.bmp`, `vr-eye1.bmp`, `vr-hud.bmp` and `vr-state.txt` |
+| `dump_frame` | 0 | On the Nth rendered frame, write `vr-dumps/vr-eye0.bmp`, `vr-eye1.bmp`, `vr-hud.bmp`, `vr-pointer.bmp` and `vr-state.txt` |
 | `diag_new_game` | 0 | Start a new game from the title menu after about 5 s, with no input |
+| `diag_pointer` | none | `frontend` or `vrmenu`: with no controller held, park a synthetic right-hand ray on that surface. `diag_pointer_u` and `diag_pointer_v` (0 to 1, v from the top, default 0.5) pick the point |
+| `diag_vr_menu` | 0 | Open the VR menu by itself after about 3 s, on page 1 settings, 2 graphics, 3 HUD, 4 locomotion, 5 controls |
 | `timing` | 0 | Nothing extra. `[vr-perf]` is logged every 10 s regardless |
+
+To look at the pointer, dump a frame with it parked on something. With the title
+menu up, aim at one of its items (the dump also shows the hover highlight, which
+proves the mouse path); or open a VR menu page and aim at a row. `dump_frame`
+then also writes `vr-pointer.bmp`, a flat picture of the previous frame's layers
+(screen, panel, beam, dot) in submission order seen from the head, which shows
+whether the beam and dot end up over the panel. It checks geometry and order,
+not the runtime's compositor. Use a dump frame well after the menu has opened:
+
+```sh
+tools/steam_frame/deploy.sh --clear-dumps --diag force_render=1 \
+    --diag diag_vr_menu=2 --diag diag_pointer=vrmenu --diag diag_pointer_u=0.5 \
+    --diag diag_pointer_v=0.45 --diag dump_frame=600 --logcat 30 \
+    --pull-dumps scratchpad/dumps/pointer
+```
 
 A typical run, first person, looking 90 degrees to the left. The new game opens
 with a cutscene, so pick a dump frame well after it (the number counts rendered
@@ -280,4 +346,5 @@ Short version. The full table is in VR_ARCHITECTURE.md.
 | The over-shoulder view staying on Claude through car entry and exit; third person turning to walk; DRAW DISTANCE; HUD DISTANCE; help box and mission title on the HUD plane | builds, not worn (second wear findings, 2026-10-04) |
 | Nothing rolls with the head: HUD, crosshair, sights, coronas, flares and particles stay upright; the VR menu is world-locked and yaw-only (`[vr] roll-free billboards/HUD` in the log) | host build, not worn. Check by tilting the head |
 | Reading the game from the Steam install in place, falling back to the copy in Documents | host build and a host test of the lookup. The Steam path has not been tried on the headset. The fallback is what runs today, because GTA III isn't installed in Steam on the Frame right now |
+| Menu laser pointer: beam and dot as the last layers, frontend driven through the mouse path, VR menu rows hover and click | host build, not worn. Not run on the device either |
 | Menus, boats, audio, comfort, performance with traffic | not tried |

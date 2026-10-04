@@ -595,7 +595,32 @@ void CPad::UpdateMouse()
 			NewMouseControllerState = PCTempMouseControllerState;
 		}
 	}
-#elif !(defined(RW_VULKAN) && defined(__ANDROID__))
+#elif defined(RW_VULKAN) && defined(__ANDROID__)
+#if MIAMIVR_STEAM_FRAME
+	// The laser pointer is the mouse while the frontend is open.
+	PCTempMouseControllerState.Clear();
+	if ( FrontEndMenuManager.m_bMenuActive )
+	{
+		int32 x = -1, y = -1, wheel = 0;
+		bool leftButton = false;
+		if ( androidgame::VrFrontendPointer(&x, &y, &leftButton, &wheel) )
+		{
+			if ( x >= 0 )
+			{
+				FrontEndMenuManager.m_nMouseTempPosX = x;
+				FrontEndMenuManager.m_nMouseTempPosY = y;
+			}
+			PCTempMouseControllerState.LMB = leftButton;
+			if ( wheel > 0 )
+				PCTempMouseControllerState.WHEELUP = 1;
+			else if ( wheel < 0 )
+				PCTempMouseControllerState.WHEELDN = 1;
+		}
+	}
+	OldMouseControllerState = NewMouseControllerState;
+	NewMouseControllerState = PCTempMouseControllerState;
+#endif
+#else
 	if ( IsForegroundApp() && PSGLOBAL(cursorIsInWindow) )
 	{
 		double xpos = 1.0f, ypos;

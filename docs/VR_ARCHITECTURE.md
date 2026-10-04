@@ -241,6 +241,46 @@ camera fix below is what keeps the view on Claude while the car slows.
 Index fallback: left B is Menu and left A is View. X and Y are reachable only
 through remapping.
 
+### Menu laser pointer
+
+Host build, not worn. User-facing description is in STEAM_FRAME.md ("Pointing at
+menus"); this is how it is wired.
+
+- **OpenXR side (`xr_vulkan_session.cpp`).** `updatePointer` runs after the
+  layers for the frame are built. It takes the right aim pose (or the synthetic
+  one from `diag_pointer`), tests the ray against the theater quad (only while
+  `setPointerFrontend(true)`, set by `renderGameFrame` from
+  `theaterFrame && m_bMenuActive`) and the full VR menu quad (`debugLayer`, only
+  when its content is the 1024x768 menu), using their submitted poses and sizes,
+  and keeps the nearer hit. `presentPointerLayers` uploads a 192x64 atlas
+  (dot idle, dot pressed, beam strip) into its own small swapchain and returns a
+  beam quad and a dot quad, with straight-alpha blending, which go out as the
+  last two layers. The beam runs from the aim pose to the hit (1.5 m on a miss);
+  both are turned to face the head about world up. The result (`pointerFrontend`,
+  `frontendU/V`, `pointerMenu`, `menuU/V`, `pointerPressed`) is in
+  `ControllerInput` and reaches the game one frame late, because the game reads
+  its input before the layers it is tested against exist.
+- **Frontend (`android.cpp`, `Pad.cpp`, `Frontend.cpp`).** `CPad::UpdateMouse`
+  had no Android branch. It now asks `VrFrontendPointer` while the frontend is
+  open: the hit becomes a pixel (`u * RsGlobal.width`, `v * RsGlobal.height`) for
+  `m_nMouseTempPosX/Y`, the trigger becomes `PCTempMouseControllerState.LMB`, and
+  the right stick becomes a wheel pulse (push, repeat while held). `CMenuManager`
+  then hovers and clicks as it does for a mouse. The cursor position freezes while
+  the pad is used, until the ray moves about 5% of the screen or a click happens.
+  `CapturePad` zeroes the right trigger (the Cross binding) while the ray is on
+  the frontend. The three mouse-sprite draws in `Frontend.cpp` go through
+  `MOUSE_CURSOR_DRAWN`, which skips them while the pointer is on the screen;
+  `m_bShowMouse` stays as it was because hover and the map crosshair read it.
+- **VR menu (`vrmenu.cpp`).** Each page's draw function registers its row layout
+  with `SetMenuRows` (first text y, pitch, count). `VrDebugUpdate` maps `menuV` to
+  a row, selects it on a change, and feeds a click as A (middle), or as the
+  decrease and increase latches (outer 16% either side). The right trigger stops
+  being R2 while the ray is on the panel or a press that started there is held.
+  A page change is ignored for three frames.
+- **Diagnostics.** `diag_pointer`, `diag_pointer_u`, `diag_pointer_v`,
+  `diag_vr_menu` in `vr-diag.ini`; `dump_frame` also writes `vr-pointer.bmp`
+  (section 8).
+
 ## 6. Views and gameplay modes
 
 `ViewMode` picks the view; View's short press swaps first person with the last
@@ -354,9 +394,11 @@ removed with `--diag-reset`):
 | --- | --- | --- |
 | `force_render` | 0 | Render and step the game with `shouldRender=false` or before focus. A synthetic head stands at 1.6 m, eyes at plus or minus 32 mm |
 | `diag_yaw` | 0 | Yaw of the synthetic head in degrees (positive turns left) |
-| `dump_frame` | 0 | On the Nth rendered frame write `vr-dumps/vr-eye0.bmp`, `vr-eye1.bmp`, `vr-hud.bmp` (when the menu quad is up) and `vr-state.txt` (which says whether the frame was a theater frame). Once |
+| `dump_frame` | 0 | On the Nth rendered frame write `vr-dumps/vr-eye0.bmp`, `vr-eye1.bmp`, `vr-hud.bmp` (when the menu quad is up), `vr-pointer.bmp` (a flat composite of the last frame's layers in submission order: screen, panel, beam, dot) and `vr-state.txt` (which says whether the frame was a theater frame). Once |
 | `timing` | 0 | Recognised; `[vr-perf]` is logged every 10 s regardless |
 | `diag_new_game` | 0 | Start a new game from the title menu after about 5 s |
+| `diag_pointer` | none | `frontend` or `vrmenu`: park a synthetic right-hand ray on that surface (`diag_pointer_u`, `diag_pointer_v`, 0 to 1, v from the top) |
+| `diag_vr_menu` | 0 | Open the VR menu after about 3 s on page 1 to 5 (settings, graphics, HUD, locomotion, controls) |
 
 Log tags are `GTA3VR`, `GTA3VR-game` (the game's stdout) and `librw-vk`. Lines
 this port adds: `[vr]` (recentre, view mode, cinema depth and why it stayed
@@ -390,6 +432,7 @@ driven by `vr-diag.ini`), **not worn** (nobody has played it).
 | `VehicleFollowRotation` and its CAR VIEW row | host build, not worn |
 | Audio backend comes up (AAudio mixer, 48 kHz); the stereo IMA ADPCM streams (radio, cutscenes) decode bit-exact against macOS `afconvert` | device, unattended; host test |
 | Game data from the Steam install in place, Documents copy as the fallback (section 1a): library discovery, read order, writes in Documents | host build and host test. Not device-verified: the fallback is what runs today, GTA III is not installed in Steam on the Frame |
+| Menu laser pointer (beam and dot as last layers, frontend through the mouse path, VR menu rows) | host build, not worn |
 | Menus, loading screens, boats, RC vehicles, pause, hearing the audio | not worn |
 | Driving (first wear: it drove, with the problems above) | worn once |
 | Comfort, performance in gameplay with traffic, colours | not worn |

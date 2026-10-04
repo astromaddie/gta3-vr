@@ -34,6 +34,15 @@
 #include "Messages.h"
 #include "FileLoader.h"
 #include "frontendoption.h"
+#if defined(RW_VULKAN) && defined(__ANDROID__) && MIAMIVR_STEAM_FRAME
+#include "../skel/android/android.h"
+// The laser pointer's dot is the cursor while it is on the frontend; the game's
+// own 2D mouse sprite would draw a second one beside it. m_bShowMouse itself is
+// left alone, because hover and the map crosshair read it.
+#define MOUSE_CURSOR_DRAWN (m_bShowMouse && !androidgame::VrFrontendPointerOwnsCursor())
+#else
+#define MOUSE_CURSOR_DRAWN m_bShowMouse
+#endif
 
 // Game has colors inlined in code.
 // For easier modification we collect them here:
@@ -2623,7 +2632,7 @@ CMenuManager::DrawFrontEndSaveZone()
 	// Draw mouse
 	RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
 	RwRenderStateSet(rwRENDERSTATETEXTUREADDRESS, (void*)rwTEXTUREADDRESSCLAMP);
-	if (m_bShowMouse) {
+	if (MOUSE_CURSOR_DRAWN) {
 		RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
 		RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
 		RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
@@ -2830,7 +2839,7 @@ CMenuManager::DrawFrontEndNormal()
 	// Draw mouse
 	RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
 	RwRenderStateSet(rwRENDERSTATETEXTUREADDRESS, (void*)rwTEXTUREADDRESSCLAMP);
-	if (m_bShowMouse) {
+	if (MOUSE_CURSOR_DRAWN) {
 		RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
 		RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
 		RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
@@ -3041,7 +3050,7 @@ CMenuManager::DrawFrontEndNormal()
 	// Draw mouse
 	RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
 	RwRenderStateSet(rwRENDERSTATETEXTUREADDRESS, (void*)rwTEXTUREADDRESSCLAMP);
-	if (m_bShowMouse) {
+	if (MOUSE_CURSOR_DRAWN) {
 		RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
 		RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
 		RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
