@@ -8,10 +8,15 @@ plan this follows, with the reasons for each choice, is
 [STUBS.md](STUBS.md).
 
 Status in one line: the port boots, starts a game and renders in stereo with
-nobody wearing it, and it has been worn once for a short play (2026-10-03: it
-worked; the minimap showed no roads and the in-car buttons were muddled, both
-since fixed in the code and not yet re-tried). Section 9 says which claim is
-backed by what.
+nobody wearing it, and it has been worn twice. The first wear (2026-10-03)
+worked, with a flat minimap and muddled in-car buttons. The second (2026-10-04,
+over-shoulder view) said the controls feel good and the opening and cutscenes
+look good, and found five things: the camera came off Claude when he left a car,
+Claude always faced the camera instead of turning to walk, the draw distance was
+short with no row for it, the help pop-up was unreadable in the top-left corner
+and the HUD sat too close, and the mission title had the wrong proportions.
+All five are changed in the code and none has been tried on the headset.
+Section 9 says which claim is backed by what.
 
 ## 1. Target and probe facts
 
@@ -80,7 +85,7 @@ and builds, but nothing has exercised it.
 | Culling | Per-view culling (`IsEntityOutsideCurrentView`, `ShouldRenderInCurrentView`), omnidirectional `ScanWorld`, bounds-checked entity lists. re3 has no occlusion system, so none of that is carried. `VR_CULLING_OFF` exists but nothing sets it | done |
 | Player body | Hidden on foot in first person (`gVrHidePlayerBody`); shown in both third-person views, in cars, and in scripted scenes | done on foot; the rest carried |
 | Driver head in first person | `CPed::PreRender` collapses the occupant's head while the eye sits inside it | carried (T7) |
-| HUD (Im2D) | Projected per eye onto a plane inside the multiview pass; safe-area transform; always drawn | done |
+| HUD (Im2D) | Projected per eye onto a plane inside the multiview pass, `HudDistanceCm` out (the plane is sized from it, so the angular size does not change); safe-area transform; always drawn. `SetVrHudLayout` in `main.cpp` sets it for both 2D passes (before and after the fade) from the mode the frame was prepared with | done for the plane; the distance and the after-fade pass are host build, not worn |
 | Radar | Vice City's 24-gon tile clipping in place of the depth mask, which fails under Adreno multiview. The tiles carry the map in their alpha channel (the device log shows one RGB colour per tile, 8888, stream alpha flag set), so they have to be blended: RenderWare blends any raster that carries alpha even with vertex alpha off, but librw's Vulkan Im2D path blends on vertex alpha alone, so they were drawn opaque and flat. `DrawRadarMap` turns vertex alpha on for the tiles. Each tile logs a `[radar]` line when it streams in | device, unattended (2026-10-04): the minimap shows the road layout, the land in orange and the roads see-through; the `[radar]` lines confirm 32-bit 128x128 tiles with one colour and the map in alpha. Not yet worn |
 | Coronas | Compact, no streaks, reflection `recipz`, headlight/streak types folded to normal | done |
 | Water | `WaterViewForward()` (the headset's forward, not the character's) | done |
@@ -162,11 +167,12 @@ The driving layout applies in a vehicle and in RC remote mode (there A is held
 back, so it stays the stock fire action) and nowhere else: menus, cutscenes and
 the intro keep the shipped table, so A still confirms.
 
-Stock GTA III held the handbrake on while the exit button was down
+Stock GTA III holds the handbrake on while the exit button is down
 (`CAutomobile::ProcessControlInputs`), which is why a press of Y at speed
-skidded the car to a halt before Claude got out (he leaves once the speed is
-under 0.17, `CPlayerInfo::Process`). On Vulkan/Android that is removed: Y is only
-"get out" and the handbrake is A. Brake, then Y.
+skids the car to a halt before Claude gets out (he leaves once the speed is
+under 0.17, `CPlayerInfo::Process`). That is the stock behaviour here too; an
+earlier change that removed it was reverted after the second wear, and the
+camera fix below is what keeps the view on Claude while the car slows.
 
 Index fallback: left B is Menu and left A is View. X and Y are reachable only
 through remapping.
@@ -179,11 +185,33 @@ third-person style.
 | View | What it is |
 | --- | --- |
 | THIRD: 3D SCREEN (default, D1) | Everything on foot, in cars, boats and RC vehicles plays on the theater screen from the stock camera. The right stick drives the camera raw; no head turning, no snap or smooth scaling. A recentre re-places the screen |
-| THIRD: OVER SHOULDER | Stereo from the stock chase camera. On foot via `thirdPersonOnFoot`; in vehicles via `thirdPersonVehicle` (the style is on, the player is in a vehicle, and no enter or exit is under way). The view is the chase camera's position and heading through the first-person machinery, so the horizon stays level. Entering or leaving a vehicle holds the last chase view still (`gVrChaseHold*`); a hold taken in a car rides along with that car, so a car still rolling while Claude gets out does not drive out of the picture |
+| THIRD: OVER SHOULDER | Stereo from the stock chase camera. On foot via `thirdPersonOnFoot`; in vehicles via `thirdPersonVehicle` (the style is on, the player is in a vehicle, and no enter or exit is under way). The view is the chase camera's position and heading through the first-person machinery, so the horizon stays level. Entering or leaving a vehicle (the `vehicleTransition` window) does not follow the stock camera, which slides between its vehicle and on-foot positions. The view is built from the player ped instead: the last chase pose is kept as a heading plus a distance behind and a height above the ped (`gVrChaseHold*`), laid out again from wherever the ped is each frame and smoothed (0.12 s), so the view stays on Claude whatever the car does. When the window ends it blends back onto the stock camera over 0.5 s. `[vr] chase follow during transition` is logged once per transition |
 | FIRST PERSON | The anchor is the player's head bone, nudged 0.12 m forward, with a level horizon. In a vehicle it is yaw-only unless `VehicleFollowRotation` is on, when the whole car basis is followed |
 
 Third person shows the body and the full HUD, and the stick is not turned by
 the head. First person hides the body on foot.
+
+In first person the view is anchored to the ped's head (the ped frame during a
+vehicle transition), and the body is hidden or the head collapsed, so entry and
+exit are already locked to the player. On the 3D screen the stock camera is what
+is shown, `thirdPersonHold` is never set there (it needs OVER SHOULDER), so
+nothing is frozen.
+
+**Third person movement (`ThirdPersonMovement`).** With the Standard control
+method the camera (`CCam::Process_FollowPedWithMouse`) wrote the camera's
+heading into the player ped every frame, so Claude always faced the camera and
+the stick strafed him (`CPed::CalculateNewVelocity`, `ProcessAnimGroups`).
+`androidgame::VrThirdPersonFaceMove()` is true in both third-person views, on
+foot, with FACE MOVE (the default), outside cutscenes and unless a ranged weapon
+is being fired or aimed (fire or target held, `PED_AIM_GUN`, `PED_ATTACK`). While
+it is true the camera stands down, `PlayerControl1stPersonRunAround` sets the
+heading to the stick's direction relative to `TheCamera.Orientation` and zeroes
+`m_fWalkAngle` (the ped turns at the stock rate and walks forward), and the
+sideways walk and jump velocity in `Ped.cpp` are skipped. When it is false, which
+is also every case with FACE CAMERA, the old behaviour holds: the ped faces the
+camera and the stick strafes. In first person nothing changed: the ped faces the
+camera heading, the stick is turned by the head, and the left stick X sidesteps
+(strafe animations), with head aim turning the body to the head while firing.
 
 **Movement direction.** MOVEMENT DIRECTION is HEAD by default (BODY ignores
 physical turns; HEAD TURN is the experimental variant that turns the camera
@@ -235,6 +263,9 @@ All are in the `[VR]` section of `gamedata/vr_settings.ini`. `deploy.sh
 | `CutsceneMode` | 3 | 0 flat cinema, 1 stereo, 2 3D subtle, 3 3D, 4 3D deep |
 | `VehicleFollowRotation` | 0 | 0 level horizon, 1 follow the car's tilt |
 | `HeadAim` | 1 | 1 head aim and head-driven weapon cameras, 0 off. No menu row |
+| `ThirdPersonMovement` | 0 | 0 FACE MOVE (Claude turns to the direction he walks), 1 FACE CAMERA (faces the camera and strafes). LOCOMOTION |
+| `DrawDistancePercent` | 250 | 100 to 300, in steps of 25. Percent of the flat game's draw distance (`CCamera::LODDistMultiplier` 1.2). GRAPHICS |
+| `HudDistanceCm` | 300 | 150 to 400. How far out the HUD plane sits (was fixed at 200). HUD |
 | `MovementOrientation` | 1 | 0 body, 1 head, 2 head turn (experimental) |
 | `TurnMode` | 0 | 0 smooth, 1 snap |
 | `TurnSensitivityPercent` | 100 | 25 to 300 |
@@ -244,7 +275,7 @@ All are in the `[VR]` section of `gamedata/vr_settings.ini`. `deploy.sh
 | `RefreshRate` | 72 | 72, 80, 90, 120 |
 | `StickLookBehind` | 0 | R3 looks behind on foot in first person |
 | `Bind*` | | Pad bindings from the CONTROLS page (`BindA`, `BindB`, ..., `BindRightStickClick`) |
-| `HudWidthPercent`, `HudScalePercent`, `HudOffsetXCm`, `HudOffsetYCm` | 100, 130, 0, 0 | HUD plane |
+| `HudWidthPercent`, `HudScalePercent`, `HudOffsetXCm`, `HudOffsetYCm` | 100, 130, 0, 0 | HUD plane (HUD SCALE is `HudScalePercent`) |
 | `GameplayHud`, `HudWeaponPanel`, `HudClock` | 1 | Read, but nothing in the engine acts on them yet; the HUD is always drawn |
 | `AntiAliasing`, `GenerateMipmaps`, `Ps2AlphaTest`, `FoliageSoftness`, `DistanceFog`, `RenderScalePercent`, `MsaaSamples` | | Graphics page |
 
@@ -285,7 +316,11 @@ driven by `vr-diag.ini`), **not worn** (nobody has played it).
 | Pad mapping on foot, Menu as Start, View short and hold, system recentre, sfvr timing | host build (read against the Vice City build, which is worn) |
 | Pad mapping in vehicles: the first wear found A and the trigger both accelerating and the exit button also holding the handbrake; replaced by the fixed driving layout above | host build, not worn since the change |
 | Each view mode after the intro (`ViewMode` 0/2/1, new game, dump at frame 20000): first person stereo with the body hidden; over-shoulder stereo with Claude visible; the 3D screen on the cinema screen in 3D. 72 fps in all three | device, unattended |
-| The View toggle in play, the held chase view through car entry | host build, not worn |
+| The View toggle in play | host build, not worn |
+| Camera stays on Claude through car entry and exit in OVER SHOULDER (player-anchored chase pose, stock handbrake-on-exit restored) | host build, not worn |
+| Third person turns to face the walk direction (`ThirdPersonMovement`), first person strafing | host build, not worn |
+| DRAW DISTANCE row (default 250%, fog brought in to the LOD edge) | host build, not worn; the 72 fps claim is a guess from the unattended headroom |
+| HUD DISTANCE (default 3 m) and HUD SCALE rows; help box top-centre and larger; help text, mission title and script text on the same HUD layout | host build, not worn |
 | Head-relative movement and head aim (`[vr] head modes: head frame on, head aim on` in first person) | device, unattended (log only; head turns can't be shown with the fixed synthetic head) |
 | Head-driven sniper/M16/rocket cameras | host build, not worn |
 | `VehicleFollowRotation` and its CAR VIEW row | host build, not worn |
@@ -308,6 +343,15 @@ See [STUBS.md](STUBS.md) for the full list. The ones that matter most:
   blocking island change.
 - The head modes, scope cameras and third-person views assume the Standard
   control method (the default). The Classic method has not been looked at.
-- Vice City raised the LOD and traffic generation distances for the headset
-  (`LODDistMultiplier`, `GenerationDistMultiplier` in `CCamera`). This port has
-  not; look at pop-in once it is worn.
+- Draw distance: the LOD multiplier used to be 70/FOV with the eye's FOV, which
+  made it shorter than the flat game's. It is the DRAW DISTANCE row now. The
+  traffic generation distance (`GenerationDistMultiplier`) is the stock 1.0 and
+  was left alone. Watch fps at 250 to 300% in the city and pop-in on the
+  headset; the headset's projection ends at 1000 m.
+- The mission title: the pass after the fade (help text, mission title, script
+  text) bypassed the HUD safe area, and the layout shape was read from the live
+  game state, so for a frame around a cutscene or menu start it could differ from
+  the plane the frame was submitted on. Both are fixed, but the reported "too
+  narrow, then stretching" and "floating" were not reproduced, so this is the
+  most likely cause rather than a confirmed one. `[vr] hud layout` in the log
+  says what the frame used.

@@ -6,8 +6,14 @@ OpenXR and Vulkan, so there is no PC involved. You need your own copy of GTA
 III, either on the Frame through Steam (app 12100) or on a PC.
 
 It is early. It boots, starts a new game and renders in stereo. It has been worn
-once, for a short play: it worked, the minimap showed no roads and the in-car
-buttons were muddled, and both are fixed in the code but not tried since.
+twice. The first time the minimap showed no roads and the in-car buttons were
+muddled. The second time (over the shoulder) the controls felt good and the
+opening and cutscenes looked good, and it turned up five things: the camera came
+off Claude when he got out of a car, he always faced where the camera looked
+instead of turning to walk, the draw distance was too short, the help pop-up
+could not be read and the HUD sat too close, and the mission title was the wrong
+shape. All of that is fixed in the code and none of it has been tried on the
+headset yet.
 [VR_ARCHITECTURE.md](VR_ARCHITECTURE.md) has the details and an honest status
 table, and [PORT_PLAN.md](PORT_PLAN.md) has the reasoning.
 
@@ -128,12 +134,12 @@ alone. Every action has a button of its own, so nothing doubles up:
 The car camera mode is not on a button here (the game's own button for it is
 Select, which this build never sends).
 
-Y only gets you out once the car is nearly stopped, as in the original game.
-The original also held the handbrake on for as long as you held the exit
-button, which skidded the car to a halt before you got out. That is gone here,
-so brake first (left trigger, or A for a quick stop) and then press Y. While
-Claude climbs out of a moving car in OVER SHOULDER, the held view now travels
-with the car instead of staying where the car left it.
+Y only gets you out once the car is nearly stopped, as in the original game,
+and, as in the original game, holding Y puts the handbrake on, so the car
+skids to a halt and then Claude gets out. In OVER SHOULDER the view stays on
+Claude the whole time he climbs in or out: it is placed from him rather than
+from the game's camera (which slides between its car and on-foot spots), and it
+eases back onto the normal camera when he is done.
 
 The layout follows the game's own controller setup. These are the buttons for
 the default one (CONFIG 1); the other three keep the same actions on the pad
@@ -148,12 +154,25 @@ Open the VR menu and go to LOCOMOTION, then VIEW.
   the same 3D depth as the cutscenes. The view never moves on its own.
 - **THIRD: OVER SHOULDER**. You stand where the game's chase camera is, with
   head tracking and a level horizon. The camera turns only with your own snap
-  or smooth turns. Getting into or out of a vehicle holds the view still.
+  or smooth turns. Getting into or out of a vehicle keeps the view behind
+  Claude at the distance it had, and it does not turn while he does it.
 - **FIRST PERSON**. You are in the player's head. Movement follows where you
   look. While you hold the fire button, shots go where you look. With a sniper
   rifle, the M16 or the rocket launcher, the scope view follows your head
   too, with no zoom. In a car, the view keeps the horizon level; the CAR VIEW
   row makes it follow the car's pitch and roll instead.
+
+**How Claude moves.** In both third person views he turns to face the way you
+push the left stick, measured against the camera: push left and he turns left
+and walks left, push toward you and he turns round and comes back. (The game's
+PC "standard" controls used to pin him to the camera heading, so he always faced
+forward and strafed. That was what you noticed.) While you fire or aim a gun
+(fire or target held) he goes back to facing the camera and the stick strafes,
+so shots go where the camera looks; fists and melee weapons still turn with the
+stick. LOCOMOTION then THIRD PERSON MOVE switches between FACE MOVE (this, the
+default) and FACE CAMERA (the old strafing). In first person there is nothing to
+choose: the body keeps facing where you look, left stick sideways sidesteps
+relative to your head, and shots follow your head while the fire button is held.
 
 Cutscenes default to CINEMA 3D, a cinema screen with depth behind it. LOCOMOTION
 then CUTSCENES steps through flat, subtle, normal and deep 3D, and stereo
@@ -175,6 +194,9 @@ The ones you are likely to want:
 | `ViewMode` | 1 | 0 first person, 1 3D screen, 2 over shoulder |
 | `CutsceneMode` | 3 | 0 flat, 1 stereo, 2 subtle, 3 3D, 4 deep |
 | `MovementOrientation` | 1 | 0 body, 1 head, 2 head turn (experimental) |
+| `ThirdPersonMovement` | 0 | 0 face move (Claude turns to walk), 1 face camera (strafe). Third person only |
+| `DrawDistancePercent` | 250 | 100 to 300 in steps of 25, percent of the flat game's draw distance. GRAPHICS page |
+| `HudDistanceCm` | 300 | 150 to 400, how far out the HUD sits. It keeps the same size to the eye. HUD page, with HUD SCALE (`HudScalePercent`, 130) |
 | `TurnMode` | 0 | 0 smooth, 1 snap |
 | `VehicleFollowRotation` | 0 | 1 makes the first-person car view follow the car's tilt |
 | `HeadAim` | 1 | 0 turns off aiming and scopes by head. No menu row |
@@ -214,7 +236,9 @@ tools/steam_frame/tests/check_bindings.py       # host test for the controller b
 ```
 
 Log tags are `GTA3VR`, `GTA3VR-game` and `librw-vk`. The lines this port adds
-start with `[vr]`, `[vr-perf]` and `[vr-dump]`. Each radar tile that streams in
+start with `[vr]`, `[vr-perf]` and `[vr-dump]`. `[vr] chase follow during
+transition` appears once per car entry or exit in OVER SHOULDER, and `[vr] hud
+layout` whenever the HUD's layout (theater or stereo, shape, distance) changes. Each radar tile that streams in
 logs one `[radar]` line (size, depth, format, whether the TXD says it has alpha, how
 many texels have alpha 0, how many distinct colours, and a few raw bytes), which says what the minimap is
 being drawn from; add `radar` to the grep in a run script to see them. `vr-state.txt` says whether the
@@ -233,5 +257,6 @@ Short version. The full table is in VR_ARCHITECTURE.md.
 | The APK builds (`com.gta3vr.frame`, minSdk 30), the bindings test passes | host |
 | Boots to the frontend at 72 fps, starts a new game, the opening cutscene shows in 3D cinema, first-person stereo gameplay renders (world, HUD, radar, coronas) | Frame, nobody wearing it |
 | Third person (both styles), head-relative movement, head aim, scope cameras, CAR VIEW | builds, not run |
-| Minimap shows the map after the tile blending fix; the in-car layout and the held view riding with the car | builds, not run |
+| Minimap shows the map after the tile blending fix; the in-car layout | builds, not run |
+| The over-shoulder view staying on Claude through car entry and exit; third person turning to walk; DRAW DISTANCE; HUD DISTANCE; help box and mission title on the HUD plane | builds, not worn (second wear findings, 2026-10-04) |
 | Menus, boats, audio, comfort, performance with traffic | not tried |
