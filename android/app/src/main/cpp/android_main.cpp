@@ -479,6 +479,9 @@ renderGameFrame(VkImage image, VkImageView view, const float viewProj[2][16],
 	const bool screenGameplayFrame = false;
 #endif
 	xrvk::setTheaterMode(theaterBefore);
+#if MIAMIVR_STEAM_FRAME
+	androidgame::VrSetFrameLayoutTheater(theaterBefore);
+#endif
 	if(theaterBefore){
 		float theaterViewProj[16], theaterIm2D[16], theaterDistance;
 		const float origin[3] = { 0.0f, 0.0f, 0.0f };

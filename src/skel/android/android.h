@@ -219,6 +219,15 @@ bool VrDistanceFogEnabled(void);
 // DRAW DISTANCE (vr_settings.ini DrawDistancePercent, 100 to 300, default 250):
 // 1.0 is the flat game's own draw distance.
 float VrDrawDistanceScale(void);
+// The 2D interface is laid out for the plane the frame was prepared with.
+// android_main states it before the game steps; main.cpp reads it when the HUD
+// is drawn, however the game state has moved on inside the step.
+void VrSetFrameLayoutTheater(bool theater);
+bool VrHudLayoutIsTheater(void);
+// Logs one "[vr] hud layout" line whenever the layout changes.
+void VrReportHudLayout(float aspect);
+// HUD plane distance in metres (vr_settings.ini HudDistanceCm, default 300).
+float VrHudDistanceMeters(void);
 bool VrHudClockEnabled(void);
 bool VrGameplayHudEnabled(void);
 void VrGetGameplayHudSettings(int *widthPercent, int *scalePercent,

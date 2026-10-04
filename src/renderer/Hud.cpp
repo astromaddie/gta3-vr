@@ -20,6 +20,9 @@
 #include "TxdStore.h"
 #include "User.h"
 #include "World.h"
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+#include "../skel/android/android.h"
+#endif
 
 #ifdef PS2_HUD
 #define MONEY_X 100.0f
@@ -1395,29 +1398,50 @@ void CHud::DrawAfterFade()
 			CFont::SetCentreOff();
 			CFont::SetPropOn();
 
-			if (CGame::germanGame)
-				CFont::SetScale(SCREEN_SCALE_X(0.52f * 0.85f), SCREEN_SCALE_Y(1.1f * 0.85f));
+			float helpScaleX = SCREEN_SCALE_X(0.52f);
+			float helpScaleY = SCREEN_SCALE_Y(1.1f);
+			float helpWrapWidth = SCREEN_SCALE_X(200.0f) + SCREEN_SCALE_X(26.0f) - SCREEN_SCALE_X_FIX(4.0f);
+			float helpLeft = SCREEN_SCALE_X(26.0f);
+			float helpTop = SCREEN_SCALE_Y(28.0f) + SCREEN_SCALE_Y_FIX((150.0f - PagerXOffset) * 0.6f);
+			if (CGame::germanGame) {
+				helpScaleX = SCREEN_SCALE_X(0.52f * 0.85f);
+				helpScaleY = SCREEN_SCALE_Y(1.1f * 0.85f);
+			}
 #ifdef MORE_LANGUAGES
-			else if (CFont::IsJapanese())
-				CFont::SetScale(SCREEN_SCALE_X(0.52f) * 1.35f, SCREEN_SCALE_Y(1.1f) * 1.25f);
+			else if (CFont::IsJapanese()) {
+				helpScaleX = SCREEN_SCALE_X(0.52f) * 1.35f;
+				helpScaleY = SCREEN_SCALE_Y(1.1f) * 1.25f;
+				helpWrapWidth = SCREEN_SCALE_X(229.0f) + SCREEN_SCALE_X(26.0f) - SCREEN_SCALE_X_FIX(4.0f);
+			}
 #endif
-			else
-				CFont::SetScale(SCREEN_SCALE_X(0.52f), SCREEN_SCALE_Y(1.1f));
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+			if (!androidgame::VrHudLayoutIsTheater()) {
+				// In the headset the corner this box sits in is the far edge
+				// of the eye, and the HUD plane is scaled in around the centre
+				// besides, so the text was small and out in the periphery. Draw
+				// it larger and put it in the comfortable field instead: top
+				// centre, a little below the middle of the upper half.
+				const float vrHelpScale = 1.35f;
+				const float boxWidth = helpWrapWidth - SCREEN_SCALE_X(26.0f);
+				helpScaleX *= vrHelpScale;
+				helpScaleY *= vrHelpScale;
+				helpWrapWidth = boxWidth * vrHelpScale;
+				helpLeft = SCREEN_WIDTH * 0.5f - helpWrapWidth * 0.5f;
+				helpWrapWidth += helpLeft;
+				helpTop = SCREEN_HEIGHT * 0.5f - SCREEN_SCALE_Y(150.0f);
+			}
+#endif
+			CFont::SetScale(helpScaleX, helpScaleY);
 
 			CFont::SetColor(CRGBA(175, 175, 175, 255));
-			CFont::SetJustifyOff();			
-#ifdef MORE_LANGUAGES
-			if (CFont::IsJapanese())
-				CFont::SetWrapx(SCREEN_SCALE_X(229.0f) + SCREEN_SCALE_X(26.0f) - SCREEN_SCALE_X_FIX(4.0f));
-			else
-#endif
-				CFont::SetWrapx(SCREEN_SCALE_X(200.0f) + SCREEN_SCALE_X(26.0f) - SCREEN_SCALE_X_FIX(4.0f));
+			CFont::SetJustifyOff();
+			CFont::SetWrapx(helpWrapWidth);
 			CFont::SetFontStyle(FONT_LOCALE(FONT_BANK));
 			CFont::SetBackgroundOn();
 			CFont::SetBackGroundOnlyTextOff();
 			CFont::SetBackgroundColor(CRGBA(0, 0, 0, fAlpha * 0.9f));
 			CFont::SetColor(CRGBA(175, 175, 175, 255));
-			CFont::PrintString(SCREEN_SCALE_X(26.0f), SCREEN_SCALE_Y(28.0f) + SCREEN_SCALE_Y_FIX((150.0f - PagerXOffset) * 0.6f), m_HelpMessageToPrint);
+			CFont::PrintString(helpLeft, helpTop, m_HelpMessageToPrint);
 			CFont::SetAlphaFade(255.0f);
 		}
 	}

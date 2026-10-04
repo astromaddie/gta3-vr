@@ -2535,7 +2535,14 @@ renderLayer(const XrView views[2])
 #ifndef MIAMIVR_BRINGUP
 		androidgame::GetIm2DViewWindow(&viewWindowX, &viewWindowY);
 #endif
+#ifndef MIAMIVR_BRINGUP
+		// How far out the HUD plane sits is the player's choice (HUD
+		// DISTANCE). The plane is sized from it below, so the interface keeps
+		// the same angular size wherever it is put.
+		const float im2dDistance = androidgame::VrHudDistanceMeters();
+#else
 		const float im2dDistance = 2.0f;
+#endif
 		const Mat4 im2dWorld = im2dPlane(head, (float)g.renderWidth,
 		                                 (float)g.renderHeight, im2dDistance,
 		                                 2.0f*im2dDistance*viewWindowX,

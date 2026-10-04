@@ -727,6 +727,34 @@ androidgame::VrHeadMovementActive(void)
 	return androidgame::VrUsesHeadRelativeMovement();
 }
 
+static bool gVrFrameLayoutTheater;
+
+void
+androidgame::VrSetFrameLayoutTheater(bool theater)
+{
+	gVrFrameLayoutTheater = theater;
+}
+
+bool
+androidgame::VrHudLayoutIsTheater(void)
+{
+	return gVrFrameLayoutTheater;
+}
+
+void
+androidgame::VrReportHudLayout(float aspect)
+{
+	static int reported = -1;
+	const int key = (gVrFrameLayoutTheater ? 1 : 0)|((int)(aspect*100.0f) << 1);
+	if(key == reported)
+		return;
+	reported = key;
+	ALOG("[vr] hud layout: %s, aspect %.3f, plane %.1f m, buffer %dx%d",
+	     gVrFrameLayoutTheater ? "theater" : "stereo", aspect,
+	     androidgame::VrHudDistanceMeters(), (int)RsGlobal.width,
+	     (int)RsGlobal.height);
+}
+
 bool
 androidgame::VrThirdPersonFaceMove(void)
 {

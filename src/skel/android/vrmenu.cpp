@@ -225,6 +225,8 @@ static bool gHudWeaponPanel = true;
 static bool gHudClock = true;
 static int gHudWidthPercent = 100;
 static int gHudScalePercent = 130;
+// How far out the HUD plane sits. It was fixed at 2 m and read as too close.
+static int gHudDistanceCm = 300;
 static int gHudOffsetXCm;
 static int gHudOffsetYCm;
 static int gQuestMovementOrientation = 1;
@@ -293,6 +295,7 @@ enum eVrHudMenuItem {
 	VR_HUD_SCALE,
 	VR_HUD_OFFSET_X,
 	VR_HUD_OFFSET_Y,
+	VR_HUD_DISTANCE,
 	VR_HUD_WEAPON_PANEL,
 	VR_HUD_CLOCK,
 	VR_HUD_BACK,
@@ -572,6 +575,8 @@ LoadVrSettings(void)
 		"HudWidthPercent", 100, ".\\vr_settings.ini"), 50), 200);
 	gHudScalePercent = Min(Max(GetPrivateProfileIntA("VR",
 		"HudScalePercent", 130, ".\\vr_settings.ini"), 50), 200);
+	gHudDistanceCm = Min(Max((int)(int32)GetPrivateProfileIntA("VR",
+		"HudDistanceCm", 300, ".\\vr_settings.ini"), 150), 400);
 	// Win32-style profile reads return an unsigned value. Cast back to signed
 	// before clamping so a saved negative offset cannot become +100.
 	gHudOffsetXCm = Min(Max((int)(int32)GetPrivateProfileIntA("VR",
@@ -945,7 +950,7 @@ CurrentMenuValueRepeats(void)
 {
 	if(gVrMenuPage == VR_MENU_PAGE_HUD)
 		return gVrHudSelection >= VR_HUD_HORIZONTAL_SCALE &&
-			gVrHudSelection <= VR_HUD_OFFSET_Y;
+			gVrHudSelection <= VR_HUD_DISTANCE;
 	if(gVrMenuPage == VR_MENU_PAGE_LOCOMOTION)
 		return gVrLocomotionSelection ==
 			VR_LOCOMOTION_TURN_SENSITIVITY;
@@ -1302,6 +1307,11 @@ VrDebugUpdate(const PadInput &in)
 				gHudOffsetYCm = Min(Max(
 					gHudOffsetYCm+direction, -100), 100);
 				SaveVrInteger("HudOffsetYCm", gHudOffsetYCm);
+				break;
+			case VR_HUD_DISTANCE:
+				gHudDistanceCm = Min(Max(
+					gHudDistanceCm+direction*10, 150), 400);
+				SaveVrInteger("HudDistanceCm", gHudDistanceCm);
 				break;
 			case VR_HUD_WEAPON_PANEL:
 				gHudWeaponPanel = !gHudWeaponPanel;
@@ -1737,18 +1747,20 @@ DrawQuestHudPage(void)
 	snprintf(rows[VR_HUD_HORIZONTAL_SCALE], sizeof(rows[0]),
 		"HORIZONTAL WIDTH  < %d%% >", gHudWidthPercent);
 	snprintf(rows[VR_HUD_SCALE], sizeof(rows[0]),
-		"UNIFORM SCALE  < %d%% >", gHudScalePercent);
+		"HUD SCALE  < %d%% >", gHudScalePercent);
 	snprintf(rows[VR_HUD_OFFSET_X], sizeof(rows[0]),
 		"HORIZONTAL OFFSET  < %+d CM >", gHudOffsetXCm);
 	snprintf(rows[VR_HUD_OFFSET_Y], sizeof(rows[0]),
 		"VERTICAL OFFSET  < %+d CM >", gHudOffsetYCm);
+	snprintf(rows[VR_HUD_DISTANCE], sizeof(rows[0]),
+		"HUD DISTANCE  < %.1f M >", gHudDistanceCm/100.0f);
 	snprintf(rows[VR_HUD_WEAPON_PANEL], sizeof(rows[0]),
 		"WEAPON ICON AND AMMO  < %s >", gHudWeaponPanel ? "ON" : "OFF");
 	snprintf(rows[VR_HUD_CLOCK], sizeof(rows[0]),
 		"CLOCK  < %s >", gHudClock ? "ON" : "OFF");
 	strcpy(rows[VR_HUD_BACK], "BACK TO SETTINGS");
 	for(int item = 0; item < VR_HUD_ITEM_COUNT; item++)
-		DrawFullVrMenuRow(rows[item], 190+item*60, 3,
+		DrawFullVrMenuRow(rows[item], 190+item*54, 3,
 			item == gVrHudSelection);
 	DrawVrMenuText(
 		"LEFT STICK SELECT   L2 MINUS   R2 OR A PLUS   B BACK",
@@ -2130,6 +2142,13 @@ VrGetGameplayHudSettings(int *widthPercent, int *scalePercent,
 	if(scalePercent) *scalePercent = gHudScalePercent;
 	if(offsetXCm) *offsetXCm = gHudOffsetXCm;
 	if(offsetYCm) *offsetYCm = gHudOffsetYCm;
+}
+
+float
+VrHudDistanceMeters(void)
+{
+	LoadVrSettings();
+	return (float)gHudDistanceCm/100.0f;
 }
 
 bool

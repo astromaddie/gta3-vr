@@ -1506,18 +1506,27 @@ RenderEffects(void)
 	POP_RENDERGROUP();
 }
 
-void
-Render2dStuff(void)
-{
-	PUSH_RENDERGROUP("Render2dStuff");
 #if defined(RW_VULKAN) && defined(__ANDROID__)
-	// The per-eye projection is much wider than the desktop HUD quad. Keep the
-	// immersive interface inside a binocularly comfortable safe area. World
-	// sprites are submitted outside this scope; theater frames keep their
-	// original full-screen layout.
-	if(androidgame::VrShouldUseTheaterMode()){
+// Lays the 2D interface out for the plane it is about to be drawn on. The
+// frame was prepared as either a theater frame or a stereo one (the choice is
+// made before the game steps, and a cutscene or menu can start inside the step),
+// so both the shape the interface is laid out for and the safe area follow that
+// choice rather than whatever the game state says by now. Used by the HUD pass
+// and by the pass after the fade (help text, mission titles, script text), so
+// everything lands on the same plane with the same proportions.
+static void
+SetVrHudLayout(void)
+{
+	if(androidgame::VrHudLayoutIsTheater()){
+		// The cinema screen has a fixed shape and keeps the original layout.
+		CDraw::SetAspectRatio(androidgame::VrTheaterAspectRatio());
 		rw::vulkan::setIm2DSafeAreaTransform(1.0f, 1.0f, 0.0f, 0.0f);
 	}else{
+		// The plane is the eye buffer, whose pixels are square on it: lay the
+		// interface out for the buffer's own shape, whatever the aspect
+		// preference says.
+		if(RsGlobal.width > 0 && RsGlobal.height > 0)
+			CDraw::SetAspectRatio((float)RsGlobal.width/(float)RsGlobal.height);
 		int widthPercent, scalePercent, offsetXCm, offsetYCm;
 		androidgame::VrGetGameplayHudSettings(
 			&widthPercent, &scalePercent, &offsetXCm, &offsetYCm);
@@ -1527,7 +1536,7 @@ Render2dStuff(void)
 		const float scaleX = uniform*(float)widthPercent/100.0f;
 		float viewWindowX = 0.6f, viewWindowY = 0.6f;
 		androidgame::GetIm2DViewWindow(&viewWindowX, &viewWindowY);
-		const float planeDistance = 2.0f;
+		const float planeDistance = androidgame::VrHudDistanceMeters();
 		const float offsetX =
 			(float)offsetXCm*0.01f*(float)RsGlobal.width/
 			(2.0f*planeDistance*Max(viewWindowX, 0.01f));
@@ -1539,6 +1548,16 @@ Render2dStuff(void)
 		rw::vulkan::setIm2DSafeAreaTransform(
 			scaleX, uniform, offsetX, offsetY);
 	}
+	androidgame::VrReportHudLayout(CDraw::GetAspectRatio());
+}
+#endif
+
+void
+Render2dStuff(void)
+{
+	PUSH_RENDERGROUP("Render2dStuff");
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	SetVrHudLayout();
 #endif
 	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
 	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
@@ -1637,8 +1656,14 @@ Render2dStuffAfterFade(void)
 	DisplayGameDebugText();
 #endif
 
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	SetVrHudLayout();
+#endif
 	CHud::DrawAfterFade();
 	CFont::DrawFonts();
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	rw::vulkan::setIm2DSafeAreaTransform(1.0f, 1.0f, 0.0f, 0.0f);
+#endif
 	POP_RENDERGROUP();
 }
 
