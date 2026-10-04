@@ -1403,6 +1403,12 @@ CPed::CalculateNewVelocity(void)
 	if ((!TheCamera.Cams[TheCamera.ActiveCam].GetWeaponFirstPersonOn() && !TheCamera.Cams[0].Using3rdPersonMouseCam())
 		|| FindPlayerPed() != this || !CanStrafeOrMouseControl())
 		return;
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// FACE MOVE: the ped walks along its own heading, the stock sideways walk
+	// below is the FACE CAMERA behaviour.
+	if (androidgame::VrThirdPersonFaceMove())
+		return;
+#endif
 
 	float movementReferenceHeading = m_fRotationCur;
 #if defined(RW_VULKAN) && defined(__ANDROID__)
@@ -8153,6 +8159,11 @@ CPed::FinishLaunchCB(CAnimBlendAssociation *animAssoc, void *arg)
 		if (TheCamera.Cams[0].Using3rdPersonMouseCam()) {
 #endif
 			float fpsAngle = ped->WorkOutHeadingForMovingFirstPerson(ped->m_fRotationCur);
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+			// FACE MOVE: a jump carries on along the way the ped faces.
+			if (androidgame::VrThirdPersonFaceMove())
+				fpsAngle = ped->m_fRotationCur;
+#endif
 			ped->m_vecMoveSpeed.x = -velocityFromAnim * Sin(fpsAngle);
 			ped->m_vecMoveSpeed.y = velocityFromAnim * Cos(fpsAngle);
 		} else {

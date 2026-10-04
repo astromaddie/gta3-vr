@@ -194,6 +194,9 @@ enum
 };
 static int gViewMode;
 static int gThirdPersonStyle = VR_VIEW_THIRD_SCREEN;
+// Third person on foot: 0 Claude turns to face the direction he walks (classic
+// third person), 1 he stays facing where the camera looks and strafes.
+static int gThirdPersonMovement;
 #endif
 // Which camera this cutscene is being watched from: 0 is the director's
 // own, 1 and up are the staged actors in the order the scene put them
@@ -335,6 +338,7 @@ enum eVrLocomotionMenuItem {
 #if MIAMIVR_STEAM_FRAME
 	VR_LOCOMOTION_VIEW = 0,
 	VR_LOCOMOTION_MOVEMENT_ORIENTATION,
+	VR_LOCOMOTION_THIRD_PERSON_MOVEMENT,
 #else
 	VR_LOCOMOTION_MOVEMENT_ORIENTATION = 0,
 #endif
@@ -515,6 +519,8 @@ LoadVrSettings(void)
 	gThirdPersonStyle = Clamp((int)(int32)GetPrivateProfileIntA("VR",
 		"ThirdPersonStyle", VR_VIEW_THIRD_SCREEN, ".\\vr_settings.ini"),
 		VR_VIEW_THIRD_SCREEN, VR_VIEW_THIRD_SHOULDER);
+	gThirdPersonMovement = GetPrivateProfileIntA("VR",
+		"ThirdPersonMovement", 0, ".\\vr_settings.ini") != 0 ? 1 : 0;
 #else
 	gCutsceneMode = Clamp((int)(int32)GetPrivateProfileIntA("VR",
 		"CutsceneMode", 0, ".\\vr_settings.ini"), 0, 1);
@@ -1332,6 +1338,12 @@ VrDebugUpdate(const PadInput &in)
 				SaveVrInteger("MovementOrientation",
 					gQuestMovementOrientation);
 				break;
+#if MIAMIVR_STEAM_FRAME
+			case VR_LOCOMOTION_THIRD_PERSON_MOVEMENT:
+				gThirdPersonMovement = !gThirdPersonMovement;
+				SaveVrInteger("ThirdPersonMovement", gThirdPersonMovement);
+				break;
+#endif
 			case VR_LOCOMOTION_TURN_MODE:
 				gQuestTurnMode =
 					(gQuestTurnMode+QUEST_TURN_MODE_COUNT+
@@ -1751,6 +1763,11 @@ DrawQuestLocomotionPage(void)
 				"HEAD TURN EXP" :
 		gQuestMovementOrientation == QUEST_MOVEMENT_ORIENTATION_HEAD ?
 			"HEAD" : "BODY");
+#if MIAMIVR_STEAM_FRAME
+	snprintf(rows[VR_LOCOMOTION_THIRD_PERSON_MOVEMENT], sizeof(rows[0]),
+		"THIRD PERSON MOVE  < %s >",
+		gThirdPersonMovement ? "FACE CAMERA" : "FACE MOVE");
+#endif
 	snprintf(rows[VR_LOCOMOTION_TURN_MODE], sizeof(rows[0]),
 		"TURNING  < %s >",
 		gQuestTurnMode == QUEST_TURN_SNAP ? "SNAP" : "SMOOTH");
@@ -1790,8 +1807,8 @@ DrawQuestLocomotionPage(void)
 	strcpy(rows[VR_LOCOMOTION_RECENTER], "RECENTER VIEW");
 	strcpy(rows[VR_LOCOMOTION_BACK], "BACK TO SETTINGS");
 #if MIAMIVR_STEAM_FRAME
-	// Eleven rows: a tighter pitch, with the hint and footer pushed down.
-	const int rowPitch = 48, hintY = 704, footerY = 726;
+	// Twelve rows: a tighter pitch, with the hint and footer pushed down.
+	const int rowPitch = 44, hintY = 704, footerY = 726;
 #else
 	const int rowPitch = 68, hintY = 668, footerY = 718;
 #endif
@@ -1806,6 +1823,9 @@ DrawQuestLocomotionPage(void)
 #if MIAMIVR_STEAM_FRAME
 	else if(gVrLocomotionSelection == VR_LOCOMOTION_VIEW)
 		DrawVrMenuText("SHORT PRESS VIEW TO SWITCH IN PLAY",
+			VR_MENU_WIDTH/2, hintY, 2, 255, 205, 90);
+	else if(gVrLocomotionSelection == VR_LOCOMOTION_THIRD_PERSON_MOVEMENT)
+		DrawVrMenuText("THIRD PERSON ONLY - FIRST PERSON STRAFES",
 			VR_MENU_WIDTH/2, hintY, 2, 255, 205, 90);
 	else if(gVrLocomotionSelection == VR_LOCOMOTION_VEHICLE_VIEW)
 		DrawVrMenuText("FIRST PERSON ONLY - FOLLOWS PITCH AND ROLL",
@@ -1975,6 +1995,13 @@ bool
 VrThirdPersonScreen(void)
 {
 	return VrViewMode() == VR_VIEW_THIRD_SCREEN;
+}
+
+bool
+VrThirdPersonFacesMovement(void)
+{
+	LoadVrSettings();
+	return gThirdPersonMovement == 0;
 }
 
 bool

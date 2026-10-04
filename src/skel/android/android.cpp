@@ -728,6 +728,35 @@ androidgame::VrHeadMovementActive(void)
 }
 
 bool
+androidgame::VrThirdPersonFaceMove(void)
+{
+	if(!androidgame::VrThirdPersonFacesMovement() ||
+	   !(androidgame::VrThirdPersonScreen() ||
+	     androidgame::VrThirdPersonShoulder()))
+		return false;
+	CPlayerPed *player = FindPlayerPed();
+	if(player == nil || player->InVehicle() ||
+	   CWorld::Players[CWorld::PlayerInFocus].IsPlayerInRemoteMode() ||
+	   gGameState != GS_PLAYING_GAME || CCutsceneMgr::IsRunning() ||
+	   CCutsceneMgr::IsCutsceneProcessing() || TheCamera.m_WideScreenOn)
+		return false;
+	// Aiming and firing a ranged weapon keep the stock behaviour of the PC
+	// "standard" controls: the body faces where the camera looks (so shots go
+	// there) and the stick strafes. Fists and melee weapons turn with the stick.
+	const CWeaponInfo *info = CWeaponInfo::GetWeaponInfo(
+		player->GetWeapon()->m_eWeaponType);
+	if(info != nil && info->m_eWeaponFire != WEAPON_FIRE_MELEE &&
+	   player->GetWeapon()->m_eWeaponType != WEAPONTYPE_UNARMED){
+		CPad *pad = CPad::GetPad(0);
+		if(pad->GetWeapon() || pad->GetTarget() ||
+		   player->GetPedState() == PED_AIM_GUN ||
+		   player->GetPedState() == PED_ATTACK)
+			return false;
+	}
+	return true;
+}
+
+bool
 androidgame::VrHeadAimDirection(float direction[3])
 {
 	return gVrHeadAimActive &&

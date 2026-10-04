@@ -724,6 +724,24 @@ CPlayerPed::PlayerControl1stPersonRunAround(CPad *padUsed)
 	float upDown = padUsed->GetPedWalkUpDown();
 	float padMove = CVector2D(leftRight, upDown).Magnitude();
 	float padMoveInGameUnit = padMove / PAD_MOVE_TO_GAME_WORLD_MOVE;
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// VR third person, FACE MOVE: classic third person turning. The stick says
+	// which way to go relative to the camera, the ped turns to that heading at
+	// the stock turn rate and walks forward along it, so there is no strafing
+	// and no pinning to the camera (CCam::Process_FollowPedWithMouse stands
+	// down for the same condition).
+	if (androidgame::VrThirdPersonFaceMove()) {
+		m_fWalkAngle = 0.0f;
+		if (padMoveInGameUnit > 0.0f) {
+			m_fRotationDest = CGeneral::LimitRadianAngle(
+				CGeneral::GetRadianAngleBetweenPoints(
+					0.0f, 0.0f, -leftRight, upDown) - TheCamera.Orientation);
+			m_fMoveSpeed = Min(padMoveInGameUnit, 0.07f * CTimer::GetTimeStep() + m_fMoveSpeed);
+		} else {
+			m_fMoveSpeed = 0.0f;
+		}
+	} else
+#endif
 	if (padMoveInGameUnit > 0.0f) {
 #if defined(RW_VULKAN) && defined(__ANDROID__)
 		// VR head modes: the ped runs where the player looks instead of

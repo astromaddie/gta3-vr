@@ -1666,7 +1666,14 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 	GetVectorsReadyForRW();
 
 	if(((CPed*)CamTargetEntity)->CanStrafeOrMouseControl() && CDraw::FadeValue < 250 &&
-	   (TheCamera.GetFadingDirection() != FADE_OUT || CDraw::FadeValue <= 100)){
+	   (TheCamera.GetFadingDirection() != FADE_OUT || CDraw::FadeValue <= 100)
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	   // VR third person, FACE MOVE: the ped turns to the way the stick walks
+	   // him (CPlayerPed::PlayerControl1stPersonRunAround) instead of being
+	   // pinned to the camera heading here.
+	   && !(CamTargetEntity == FindPlayerPed() && androidgame::VrThirdPersonFaceMove())
+#endif
+	   ){
 		float Heading = Front.Heading();
 		((CPed*)TheCamera.pTargetEntity)->m_fRotationCur = Heading;
 		((CPed*)TheCamera.pTargetEntity)->m_fRotationDest = Heading;
