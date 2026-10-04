@@ -2190,12 +2190,22 @@ Step(void)
 	// Hand the backend the time cycle planes the desktop renderer takes from
 	// the RenderWare camera. Without them the world ends at the far clip with
 	// a hard edge, which is plain to see from anything that can gain height.
-	if(gGameState == GS_PLAYING_GAME)
+	if(gGameState == GS_PLAYING_GAME){
+		// The world ends where the draw distance does (the LOD scan radius),
+		// not at the time cycle's far clip, which is usually much further out:
+		// the fog is brought in to meet that edge so it fades instead of
+		// showing a hard cut. Weather fog that is already nearer wins.
+		float fogEnd = CTimeCycle::GetFarClip();
+		float fogStart = CTimeCycle::GetFogStart();
+		const float edge = Min(300.0f*TheCamera.LODDistMultiplier, 990.0f);
+		if(fogEnd > edge){
+			fogEnd = edge;
+			fogStart = Min(fogStart, edge*0.55f);
+		}
 		rw::vulkan::setFogParams(
-			androidgame::VrDistanceFogEnabled() ?
-				CTimeCycle::GetFogStart() : 0.0f,
-			androidgame::VrDistanceFogEnabled() ?
-				CTimeCycle::GetFarClip() : 0.0f);
+			androidgame::VrDistanceFogEnabled() ? fogStart : 0.0f,
+			androidgame::VrDistanceFogEnabled() ? fogEnd : 0.0f);
+	}
 
 	static RwUInt32 reportedState = 0xFFFFFFFF;
 	if(gGameState != reportedState){

@@ -216,6 +216,9 @@ int VrSpatialAaMode(void);
 // clock above them. Both are switches of their own on the headset.
 bool VrHudWeaponPanelEnabled(void);
 bool VrDistanceFogEnabled(void);
+// DRAW DISTANCE (vr_settings.ini DrawDistancePercent, 100 to 300, default 250):
+// 1.0 is the flat game's own draw distance.
+float VrDrawDistanceScale(void);
 bool VrHudClockEnabled(void);
 bool VrGameplayHudEnabled(void);
 void VrGetGameplayHudSettings(int *widthPercent, int *scalePercent,

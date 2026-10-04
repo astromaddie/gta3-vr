@@ -217,6 +217,8 @@ static bool gGameplayHudEnabled = true;
 // Distance fog, as the desktop game draws it. Off shows the bare far clip;
 // it is here to compare the two.
 static bool gDistanceFog = true;
+// How far the world is drawn, as a percentage of the flat game's own distance.
+static int gDrawDistancePercent = 250;
 // Weapon icon, ammo counter and clock. Part of the classic interface, which is
 // what a new player gets: the immersive layout is what switches them off.
 static bool gHudWeaponPanel = true;
@@ -320,6 +322,7 @@ enum eVrGraphicsMenuItem {
 	VR_GRAPHICS_CPU_PERFORMANCE,
 	VR_GRAPHICS_GPU_PERFORMANCE,
 	VR_GRAPHICS_FOG,
+	VR_GRAPHICS_DRAW_DISTANCE,
 #if defined(MIAMIVR_DEV_TOOLS) && MIAMIVR_DEV_TOOLS
 	VR_GRAPHICS_QUICK_START,
 #endif
@@ -555,6 +558,8 @@ LoadVrSettings(void)
 		gQuestMsaaSamples >= 2 ? 2 : 1;
 	gDistanceFog = GetPrivateProfileIntA("VR", "DistanceFog", 1,
 		".\\vr_settings.ini") != 0;
+	gDrawDistancePercent = Clamp((int)(int32)GetPrivateProfileIntA("VR",
+		"DrawDistancePercent", 250, ".\\vr_settings.ini"), 100, 300);
 	// The classic interface: weapon icon, ammo and clock on the HUD plane.
 	gHudWeaponPanel = GetPrivateProfileIntA("VR", "HudWeaponPanel", 1,
 		".\\vr_settings.ini") != 0;
@@ -1256,6 +1261,11 @@ VrDebugUpdate(const PadInput &in)
 			}else if(gVrGraphicsSelection == VR_GRAPHICS_FOG){
 				gDistanceFog = !gDistanceFog;
 				SaveVrInteger("DistanceFog", gDistanceFog ? 1 : 0);
+			}else if(gVrGraphicsSelection == VR_GRAPHICS_DRAW_DISTANCE){
+				const int direction = decreasePulse ? -1 : 1;
+				gDrawDistancePercent = Clamp(
+					gDrawDistancePercent+direction*25, 100, 300);
+				SaveVrInteger("DrawDistancePercent", gDrawDistancePercent);
 #if defined(MIAMIVR_DEV_TOOLS) && MIAMIVR_DEV_TOOLS
 			}else if(gVrGraphicsSelection == VR_GRAPHICS_QUICK_START){
 				gQuestQuickTestStart = !gQuestQuickTestStart;
@@ -1658,6 +1668,8 @@ DrawQuestGraphicsPage(void)
 			"PENDING");
 	snprintf(rows[VR_GRAPHICS_FOG], sizeof(rows[0]),
 		"DISTANCE FOG  < %s >", gDistanceFog ? "ON" : "OFF");
+	snprintf(rows[VR_GRAPHICS_DRAW_DISTANCE], sizeof(rows[0]),
+		"DRAW DISTANCE  < %d%% >", gDrawDistancePercent);
 #if defined(MIAMIVR_DEV_TOOLS) && MIAMIVR_DEV_TOOLS
 	snprintf(rows[VR_GRAPHICS_QUICK_START], sizeof(rows[0]),
 		"QUICK TEST START  < %s - NEXT LAUNCH >",
@@ -2067,6 +2079,13 @@ VrDistanceFogEnabled(void)
 {
 	LoadVrSettings();
 	return gDistanceFog;
+}
+
+float
+VrDrawDistanceScale(void)
+{
+	LoadVrSettings();
+	return (float)gDrawDistancePercent/100.0f;
 }
 
 bool

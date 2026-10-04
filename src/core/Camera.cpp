@@ -721,7 +721,15 @@ CCamera::Process(void)
 
 	// LOD dist
 	if(!CCutsceneMgr::IsRunning() || CCutsceneMgr::UseLodMultiplier()){
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+		// The headset's field of view is far wider than the 70 degrees the
+		// 70/FOV compensation assumes, and it was cutting the draw distance
+		// to under what the flat game shows. The distance is the player's
+		// DRAW DISTANCE row instead.
+		LODDistMultiplier = 1.0f;
+#else
 		LODDistMultiplier = 70.0f/CDraw::GetFOV();
+#endif
 #ifndef FIX_BUGS
 		// makes no sense and gone in VC
 		LODDistMultiplier *= CDraw::GetAspectRatio()/(4.0f/3.0f);
@@ -730,7 +738,12 @@ CCamera::Process(void)
 		LODDistMultiplier = 1.0f;
 #if GTA_VERSION > GTA3_PS2_160
 	GenerationDistMultiplier = LODDistMultiplier;
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+	// 100% is the flat game's own 1.2.
+	LODDistMultiplier *= 1.2f*androidgame::VrDrawDistanceScale();
+#else
 	LODDistMultiplier *= CRenderer::ms_lodDistScale;
+#endif
 #else
 	GenerationDistMultiplier = 1.0f;	// temporary
 #endif

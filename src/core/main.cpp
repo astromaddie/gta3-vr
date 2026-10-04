@@ -1745,7 +1745,15 @@ Idle(void *arg)
 #ifdef FIX_BUGS
 		RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void *)FALSE); // TODO: temp? this fixes OpenGL render but there should be a better place for this
 		// This has to be done BEFORE RwCameraBeginUpdate
+#if defined(RW_VULKAN) && defined(__ANDROID__)
+		// Culling reaches as far as DRAW DISTANCE asks even when the weather's
+		// far clip is shorter (the fog still hides the edge); the headset's
+		// projection ends at 1000 m.
+		RwCameraSetFarClipPlane(Scene.camera, Max(CTimeCycle::GetFarClip(),
+			Min(300.0f*TheCamera.LODDistMultiplier+60.0f, 1000.0f)));
+#else
 		RwCameraSetFarClipPlane(Scene.camera, CTimeCycle::GetFarClip());
+#endif
 		RwCameraSetFogDistance(Scene.camera, CTimeCycle::GetFogStart());
 #endif
 
