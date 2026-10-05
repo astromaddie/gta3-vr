@@ -228,7 +228,7 @@ static bool gGameplayHudEnabled = true;
 // it is here to compare the two.
 static bool gDistanceFog = true;
 // How far the world is drawn, as a percentage of the flat game's own distance.
-static int gDrawDistancePercent = 250;
+static int gDrawDistancePercent = 150;
 // Weapon icon, ammo counter and clock. Part of the classic interface, which is
 // what a new player gets: the immersive layout is what switches them off.
 static bool gHudWeaponPanel = true;
@@ -584,7 +584,7 @@ LoadVrSettings(void)
 	gDistanceFog = GetPrivateProfileIntA("VR", "DistanceFog", 1,
 		".\\vr_settings.ini") != 0;
 	gDrawDistancePercent = Clamp((int)(int32)GetPrivateProfileIntA("VR",
-		"DrawDistancePercent", 250, ".\\vr_settings.ini"), 100, 300);
+		"DrawDistancePercent", 150, ".\\vr_settings.ini"), 100, 300);
 	// The classic interface: weapon icon, ammo and clock on the HUD plane.
 	gHudWeaponPanel = GetPrivateProfileIntA("VR", "HudWeaponPanel", 1,
 		".\\vr_settings.ini") != 0;

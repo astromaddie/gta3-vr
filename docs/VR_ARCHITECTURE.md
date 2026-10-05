@@ -469,7 +469,7 @@ All are in the `[VR]` section of `gamedata/vr_settings.ini`. `deploy.sh
 | `VehicleFollowRotation` | 0 | 0 level horizon, 1 follow the car's tilt |
 | `HeadAim` | 1 | 1 head aim and head-driven weapon cameras, 0 off. No menu row |
 | `ThirdPersonMovement` | 0 | 0 FACE MOVE (Claude turns to the direction he walks), 1 FACE CAMERA (faces the camera and strafes). LOCOMOTION |
-| `DrawDistancePercent` | 250 | 100 to 300, in steps of 25. Percent of the flat game's draw distance (`CCamera::LODDistMultiplier` 1.2). GRAPHICS |
+| `DrawDistancePercent` | 150 | 100 to 300, in steps of 25. Percent of the flat game's draw distance (`CCamera::LODDistMultiplier` 1.2). GRAPHICS |
 | `HudDistanceCm` | 300 | 150 to 400. How far out the HUD plane sits (was fixed at 200). HUD |
 | `MovementOrientation` | 1 | 0 body, 1 head, 2 head turn (experimental) |
 | `TurnMode` | 0 | 0 smooth, 1 snap |
@@ -527,7 +527,7 @@ driven by `vr-diag.ini`), **not worn** (nobody has played it).
 | The View toggle in play | host build, not worn |
 | Camera stays on Claude through car entry and exit in OVER SHOULDER (player-anchored chase pose, stock handbrake-on-exit restored) | host build, not worn |
 | Third person turns to face the walk direction (`ThirdPersonMovement`), first person strafing | host build, not worn |
-| DRAW DISTANCE row (default 250%, fog brought in to the LOD edge) | host build, not worn; the 72 fps claim is a guess from the unattended headroom |
+| DRAW DISTANCE row (default 150%, fog brought in to the LOD edge) | Frame, nobody wearing it (2026-10-05): in the rainy intro at 120 Hz and 2160 per eye, 250% and 175% drop to a flat 60 (SteamVR half rate), 150% and 100% stay off half rate with dips to 72-117 in the heaviest rain. 150% is the default; higher is still in the menu |
 | HUD DISTANCE (default 3 m) and HUD SCALE rows; help box top-centre and larger; help text, mission title and script text on the same HUD layout | host build, not worn |
 | Head-relative movement and head aim (`[vr] head modes: head frame on, head aim on` in first person) | device, unattended (log only; head turns can't be shown with the fixed synthetic head) |
 | Head-driven sniper/M16/rocket cameras | host build, not worn |

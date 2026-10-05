@@ -274,7 +274,7 @@ The ones you are likely to want:
 | `CutsceneMode` | 3 | 0 flat, 1 stereo, 2 subtle, 3 3D, 4 deep |
 | `MovementOrientation` | 1 | 0 body, 1 head, 2 head turn (experimental) |
 | `ThirdPersonMovement` | 0 | 0 face move (Claude turns to walk), 1 face camera (strafe). Third person only |
-| `DrawDistancePercent` | 250 | 100 to 300 in steps of 25, percent of the flat game's draw distance. GRAPHICS page |
+| `DrawDistancePercent` | 150 | 100 to 300 in steps of 25, percent of the flat game's draw distance. GRAPHICS page |
 | `HudDistanceCm` | 300 | 150 to 400, how far out the HUD sits. It keeps the same size to the eye. HUD page, with HUD SCALE (`HudScalePercent`, 100; it was 130) |
 | `TurnMode` | 0 | 0 smooth, 1 snap |
 | `VehicleFollowRotation` | 0 | 1 makes the first-person car view follow the car's tilt |
@@ -311,7 +311,10 @@ an eye, the panel's own size.
   about 30 s, then misses frames and SteamVR halves it to a flat 60. At 100% it
   mostly holds 120, with dips to 89 to 117. Render scale 75% (1620 per eye) did
   not help, so the cost is the extra scenery that draw distance brings in, not
-  pixels. Game CPU is 1.2 to 2 ms a frame at 120. Open play is not measured yet.)
+  pixels. 175% also drops to 60 (two runs); 150% never does, though the
+  heaviest rain still dips it to 72-117 (two runs). So DRAW DISTANCE now
+  defaults to 150%; 175-300% stay in the menu for 90 Hz. Game CPU is 1.2 to 2 ms
+  a frame at 120. Open play is not measured yet.)
 - **Wear checklist.** Set GTA3VR to 120 Hz in SteamVR's per-app settings, and the
   resolution to 2160 (done once, 2026-10-05). Check the log says
   `compositor 120` after `[vr] refresh:` and `eye image 2160x2160` after
