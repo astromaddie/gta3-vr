@@ -33,9 +33,8 @@ void triggerHaptic(int hand, float amplitude, float frequencyHz, float durationM
 void setPreferredDisplayRefreshRate(float hz);
 #if MIAMIVR_STEAM_FRAME
 // What the compositor runs at (from its frame period; 0 before the first
-// frame), the rate last requested through XR_FB_display_refresh_rate, and the
-// ceiling the worn fallback has stepped down to (0 = none).
-void getRefreshStatus(float *runningHz, float *requestedHz, float *capHz);
+// frame) and the rate last requested through XR_FB_display_refresh_rate.
+void getRefreshStatus(float *runningHz, float *requestedHz);
 #endif
 
 // OpenXR performance hint for the standalone runtime. Auto leaves a fresh

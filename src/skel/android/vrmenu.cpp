@@ -1980,15 +1980,10 @@ DrawQuestLocomotionPage(void)
 #endif
 #if MIAMIVR_STEAM_FRAME
 	{
-		// What SteamVR is really running at, and the ceiling the worn fallback
-		// has stepped down to, next to the setting.
-		float running = 0.0f, requested = 0.0f, cap = 0.0f;
-		xrvk::getRefreshStatus(&running, &requested, &cap);
-		if(cap > 0.0f && cap < (float)gQuestRefreshRateHz)
-			snprintf(rows[VR_LOCOMOTION_REFRESH_RATE], sizeof(rows[0]),
-				"REFRESH RATE  < %d HZ >  RUNNING %.0f, FELL BACK TO %.0f",
-				gQuestRefreshRateHz, running, cap);
-		else if(running > 0.0f)
+		// What SteamVR is really running at next to the rate asked for.
+		float running = 0.0f, requested = 0.0f;
+		xrvk::getRefreshStatus(&running, &requested);
+		if(running > 0.0f)
 			snprintf(rows[VR_LOCOMOTION_REFRESH_RATE], sizeof(rows[0]),
 				"REFRESH RATE  < %d HZ >  RUNNING %.0f HZ",
 				gQuestRefreshRateHz, running);
