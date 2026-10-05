@@ -432,7 +432,7 @@ driven by `vr-diag.ini`), **not worn** (nobody has played it).
 | `VehicleFollowRotation` and its CAR VIEW row | host build, not worn |
 | Audio backend comes up (AAudio mixer, 48 kHz); the stereo IMA ADPCM streams (radio, cutscenes) decode bit-exact against macOS `afconvert` | device, unattended; host test |
 | Game data from the Steam install in place, Documents copy as the fallback (section 1a): library discovery, read order, writes in Documents | host build and host test. Not device-verified: the fallback is what runs today, GTA III is not installed in Steam on the Frame |
-| Menu laser pointer (beam and dot as last layers, frontend through the mouse path, VR menu rows) | host build, not worn |
+| Menu laser pointer (beam and dot as last layers, frontend through the mouse path, VR menu rows) | Frame, nobody wearing it: title menu and VR menu dumps, row under the dot highlights, pointer on top. Not worn |
 | Menus, loading screens, boats, RC vehicles, pause, hearing the audio | not worn |
 | Driving (first wear: it drove, with the problems above) | worn once |
 | Comfort, performance in gameplay with traffic, colours | not worn |

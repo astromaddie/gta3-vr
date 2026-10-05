@@ -166,7 +166,7 @@ buttons they use, so the table above holds in all of them.
 
 ### Pointing at menus
 
-Host build, not worn. In the game's own menus (main menu, pause, options) and
+Checked on the Frame with nobody wearing it, not worn yet. In the game's own menus (main menu, pause, options) and
 in the VR menu, the right controller's aim ray works like a mouse. You see a thin
 beam from the controller and a dot where it lands (cyan, amber while the trigger
 is down). If the ray misses everything the beam still shows, 1.5 m long and
@@ -345,6 +345,6 @@ Short version. The full table is in VR_ARCHITECTURE.md.
 | Minimap shows the map after the tile blending fix; the in-car layout | builds, not run |
 | The over-shoulder view staying on Claude through car entry and exit; third person turning to walk; DRAW DISTANCE; HUD DISTANCE; help box and mission title on the HUD plane | builds, not worn (second wear findings, 2026-10-04) |
 | Nothing rolls with the head: HUD, crosshair, sights, coronas, flares and particles stay upright; the VR menu is world-locked and yaw-only (`[vr] roll-free billboards/HUD` in the log) | host build, not worn. Check by tilting the head |
-| Reading the game from the Steam install in place, falling back to the copy in Documents | host build and a host test of the lookup. The Steam path has not been tried on the headset. The fallback is what runs today, because GTA III isn't installed in Steam on the Frame right now |
-| Menu laser pointer: beam and dot as the last layers, frontend driven through the mouse path, VR menu rows hover and click | host build, not worn. Not run on the device either |
+| Reading the game from the Steam install in place, falling back to the copy in Documents | Frame, nobody wearing it, on the fallback: logs `Documents copy ... (no Steam install of app 12100 found)` and plays into the game. The Steam path has a host test only, because GTA III isn't installed in Steam on the Frame right now |
+| Menu laser pointer: beam and dot as the last layers, frontend driven through the mouse path, VR menu rows hover and click | Frame, nobody wearing it (2026-10-05): with the ray parked by `diag_pointer`, the title menu row and the VR menu row under the dot highlight, and `vr-pointer.bmp` shows beam and dot over the screen and the panel. Clicking with a real controller is not worn yet |
 | Menus, boats, audio, comfort, performance with traffic | not tried |
