@@ -294,22 +294,25 @@ default); the Classic one hasn't been looked at.
 Host build, not worn. The standard for the Frame is 120 Hz at about 2160 x 2160
 an eye, the panel's own size.
 
-- **Refresh rate.** `RefreshRate` defaults to 120. When the session is focused the
-  game lists the rates `XR_FB_display_refresh_rate` offers and asks for the
-  highest one that is not above the setting. The log says what happened:
+- **Refresh rate.** On the Frame the game can't change the rate: SteamVR offers
+  only the rate set for this title in its per-app settings. `RefreshRate`
+  (default 120) is the rate the game asks for, once per session, on the first
+  focused frame: it lists what `XR_FB_display_refresh_rate` offers, asks for the
+  highest offered rate not above the setting (and skips the request if that is
+  below what the compositor already runs). The log says what happened:
   `[vr] refresh: setting 120, offered {90, 120}, requested 120`. It never holds
-  the picture back waiting for the display to settle, and it never asks for a
-  lower rate than the compositor already runs at (SteamVR can list less than it
-  runs) unless you changed the setting yourself. While you are wearing it, two
-  [vr-perf] windows in a row (10 s each) under 90% of the current rate step down
-  120, then 90, then 72, with `[vr] refresh fallback: ...` in the log. The
-  fallback lasts for that session; the setting is untouched, and picking a rate
-  again clears it. The LOCOMOTION row shows what SteamVR is really running at.
-- **Your one-time step.** SteamVR only offers the rate set for this title in its
-  own per-app settings, so the game can't make the Frame go to 120 on its own. In
-  the headset, open SteamVR's settings for GTA III and set 120 Hz (and the
-  resolution to 2160). This is part of the wear checklist: set it once, and check
-  the log says `compositor 120` after `[vr] refresh:`.
+  the picture back for the display. There is no automatic step down, because it
+  could never take effect. Instead, while you are wearing it, two [vr-perf]
+  windows in a row (10 s each) under 90% of the display rate make the game log
+  once: `[vr] refresh: not holding 120 Hz (fps X, Y); set GTA3VR to 90 Hz in
+  SteamVR per-app settings`, with the highest of 120, 90 and 72 the measured fps
+  would hold. The LOCOMOTION row shows what SteamVR is really running at. (A run
+  that held 120 for about 30 s and then sat at exactly 60 looked like SteamVR
+  throttling to half rate; that is being re-measured.)
+- **Wear checklist.** Set GTA3VR to 120 Hz in SteamVR's per-app settings, and the
+  resolution to 2160 (done once, 2026-10-05). Check the log says
+  `compositor 120` after `[vr] refresh:` and `eye image 2160x2160` after
+  `[vr] render scale:`.
 - **Resolution.** The default is automatic: 2160 divided by the width the runtime
   recommends. With the runtime's own 1728 that is 125%; with SteamVR's per-app
   resolution already at 2160 it is 100%, so nothing renders at ~2700. Picking
@@ -398,5 +401,5 @@ Short version. The full table is in VR_ARCHITECTURE.md.
 | Reading the game from the Steam install in place, falling back to the copy in Documents | Frame, nobody wearing it, on the fallback: logs `Documents copy ... (no Steam install of app 12100 found)` and plays into the game. The Steam path has a host test only, because GTA III isn't installed in Steam on the Frame right now |
 | Menu laser pointer: beam and dot as the last layers, frontend driven through the mouse path, VR menu rows hover and click | Frame, nobody wearing it (2026-10-05): with the ray parked by `diag_pointer`, the title menu row and the VR menu row under the dot highlight, and `vr-pointer.bmp` shows beam and dot over the screen and the panel. Clicking with a real controller is not worn yet |
 | The camera stays locked to the player whichever way the character faces (third wear, 2026-10-05) | worn, good |
-| Laser dot lies on the surface, beam stops short; tooltips 0.65x and to the left; HUD SCALE 100%; refresh request 120 with the 90/72 fallback; automatic ~2160 eye size; grips never the handbrake | host build, headset-unverified until worn (third wear findings, 2026-10-05) |
+| Laser dot lies on the surface, beam stops short; tooltips 0.65x and to the left; HUD SCALE 100%; refresh requested once (120 setting), with a log note if the rate isn't held; automatic ~2160 eye size; grips never the handbrake | host build, headset-unverified until worn (third wear findings, 2026-10-05) |
 | Menus, boats, audio, comfort, performance with traffic | not tried |

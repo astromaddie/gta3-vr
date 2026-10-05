@@ -339,29 +339,36 @@ that window, so it was left alone.
 
 Standard section 9: 120 Hz, about 2160 x 2160 an eye.
 
-- **Refresh request (`requestFrameRefreshRate`).** Sent from `renderFrame` on the
-  first focused frame after `xrWaitFrame` (and again when the setting changes),
-  so the compositor's real rate, taken from `predictedDisplayPeriod`
-  (`measuredRefreshHz`), is known. It enumerates the offered rates, picks the
-  highest at or under the setting (or under the fallback's ceiling; the lowest
-  offered if none is), logs `[vr] refresh: setting N, offered {...}, requested R`
+- **Refresh request (`requestFrameRefreshRate`).** The app can't change the rate
+  on the Frame (standard section 9): SteamVR offers only the title's per-app rate,
+  and the extension may list less than the compositor runs. So the request goes
+  out at most once per session, from `renderFrame` on the first focused frame
+  after `xrWaitFrame`, once the compositor's real rate (from
+  `predictedDisplayPeriod`, `measuredRefreshHz`) is known. It enumerates the
+  offered rates, takes the highest at or under the `RefreshRate` setting (none
+  means no request), logs `[vr] refresh: setting N, offered {...}, requested R`
   and calls `xrRequestDisplayRefreshRateFB`. A request below the compositor's
-  rate is skipped (with a log line saying so) unless the player or the fallback
-  asked for it. Frames are never held while the rate settles
-  (`refreshRateReadyForFrames` stays true), and the Quest-era retry pump is
-  compiled out. `third_party/sfvr`'s settings registry already has a
-  `refresh_rate` key (default 90, 72 to 144), but this port keeps its own
-  `RefreshRate` ini key as it always did, so it was not reused, and the vendored
-  copy is left as it is.
-- **Fallback (`refreshFallbackWindow`).** Called with each `[vr-perf]` line. A
-  window counts only if the session was FOCUSED for all of it. Two in a row below
-  90% of the current rate set a ceiling one step down, 120 to 90 to 72, request
-  it and ignore the window the change lands in. It is for the session only; a
-  new setting clears it.
-- **Per-app rate.** SteamVR keeps a preferred rate per Steam title, the extension
-  offers only that, and the game can't raise it. You set 120 Hz (and resolution
-  2160) for GTA III in SteamVR's per-app settings in the headset once; see
-  `references/platform.md` "Per-app refresh". It belongs on the wear checklist.
+  rate is skipped, with a log line saying so. A later change of the setting does
+  not ask again; it is the rate asked for next session. Frames are never held
+  while the rate settles (`refreshRateReadyForFrames` stays true), and the
+  Quest-era retry pump is compiled out. `third_party/sfvr`'s settings registry
+  already has a `refresh_rate` key (default 90, 72 to 144), but this port keeps
+  its own `RefreshRate` ini key as it always did, so it was not reused, and the
+  vendored copy is left as it is.
+- **Not-holding note (`refreshFallbackWindow`).** Called with each `[vr-perf]`
+  line. A window counts only if the session was FOCUSED for all of it. After two
+  in a row below 90% of the display rate it logs once per session `[vr] refresh:
+  not holding N Hz (fps X, Y); set GTA3VR to M Hz in SteamVR per-app settings`,
+  M being the highest of 120, 90 and 72 the lower of the two fps figures would
+  hold. It changes nothing; an automatic ladder was removed because it can't take
+  effect on the Frame. A device run held 119.8 to 120 fps for about 30 s and then
+  sat at exactly 60 (missed 0, xr wait 9 to 12 ms), which looks like SteamVR
+  half-rate throttling; the run was contaminated by a stuck Vice City process, so
+  it is being re-measured.
+- **Per-app rate.** SteamVR keeps a preferred rate per Steam title and the game
+  can't raise it. Wear checklist: set GTA3VR to 120 Hz and resolution 2160 in
+  SteamVR's per-app settings in the headset (done 2026-10-05); see
+  `references/platform.md` "Per-app refresh".
 - **Resolution.** The swapchain is created at `recommended * scale`, and the scene
   and depth targets in librw are the same size (`backendParams.sceneWidth` is the
   swapchain width, clamped to it), so the game renders straight into the image
@@ -373,7 +380,7 @@ Standard section 9: 120 Hz, about 2160 x 2160 an eye.
   log has `[vr] render scale: recommended WxH, automatic for 2160 wide: S%
   (selected ...), eye image WxH`. The GRAPHICS row shows the setting and the real
   eye size; the LOCOMOTION refresh row shows the setting and what the compositor
-  runs at, and a fallback.
+  runs at.
 
 ## 6. Views and gameplay modes
 
@@ -470,7 +477,7 @@ All are in the `[VR]` section of `gamedata/vr_settings.ini`. `deploy.sh
 | `HeadSteeringSensitivityPercent` | 50 | 25 to 300, for head turn |
 | `SnapTurnAngleDegrees` | 30 | 15 to 90 |
 | `HeadBobbing` | 0 | Walking head bob in first person |
-| `RefreshRate` | 120 | 72, 90, 120 (Frame). The setting the request and the fallback start from |
+| `RefreshRate` | 120 | 72, 90, 120 (Frame). The rate requested, once per session |
 | `StickLookBehind` | 0 | R3 looks behind on foot in first person |
 | `Bind*` | | Pad bindings from the CONTROLS page (`BindA`, `BindB`, ..., `BindRightStickClick`) |
 | `HudWidthPercent`, `HudScalePercent`, `HudOffsetXCm`, `HudOffsetYCm` | 100, 100, 0, 0 | HUD plane (HUD SCALE is `HudScalePercent`; the default was 130 until the third wear) |
@@ -528,7 +535,7 @@ driven by `vr-diag.ini`), **not worn** (nobody has played it).
 | Audio backend comes up (AAudio mixer, 48 kHz); the stereo IMA ADPCM streams (radio, cutscenes) decode bit-exact against macOS `afconvert` | device, unattended; host test |
 | Game data from the Steam install in place, Documents copy as the fallback (section 1a): library discovery, read order, writes in Documents | host build and host test. Not device-verified: the fallback is what runs today, GTA III is not installed in Steam on the Frame |
 | Third wear (2026-10-05): the camera stays locked to the player whichever way the character faces | worn, good |
-| Third wear fixes: dot on the surface and beam short of it, tooltips 0.65x upper left, HUD SCALE 100%, 120 Hz request with 90/72 fallback, automatic ~2160 eye size, grips unbound in vehicles (check added) | host build, headset-unverified until worn |
+| Third wear fixes: dot on the surface and beam short of it, tooltips 0.65x upper left, HUD SCALE 100%, one 120 Hz request and a log note when the rate isn't held, automatic ~2160 eye size, grips unbound in vehicles (check added) | host build, headset-unverified until worn |
 | Menu laser pointer (beam and dot as last layers, frontend through the mouse path, VR menu rows) | Frame, nobody wearing it: title menu and VR menu dumps, row under the dot highlights, pointer on top. Not worn |
 | Menus, loading screens, boats, RC vehicles, pause, hearing the audio | not worn |
 | Driving (first wear: it drove, with the problems above) | worn once |
