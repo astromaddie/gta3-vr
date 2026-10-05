@@ -1539,8 +1539,12 @@ SetVrHudLayout(void)
 		int widthPercent, scalePercent, offsetXCm, offsetYCm;
 		androidgame::VrGetGameplayHudSettings(
 			&widthPercent, &scalePercent, &offsetXCm, &offsetYCm);
-		// 130% is the release default; on the native full-eye target it maps
-		// to the already player-tested 0.58 safe area.
+		// HUD SCALE 100% (the default) is a safe area of 0.446 of the eye's
+		// view window, which is about +-25 degrees from straight ahead with
+		// the Frame's field of view, so the whole interface sits in roughly
+		// 50 degrees (standard.md section 4: near, about 40 degrees). It was
+		// 130% (0.58, +-32 degrees); worn at 3 m, that put the clock, money
+		// and health 30 degrees up and out.
 		const float uniform = 0.58f*(float)scalePercent/130.0f;
 		const float scaleX = uniform*(float)widthPercent/100.0f;
 		float viewWindowX = 0.6f, viewWindowY = 0.6f;

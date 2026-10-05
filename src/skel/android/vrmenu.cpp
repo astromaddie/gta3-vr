@@ -230,7 +230,8 @@ static int gDrawDistancePercent = 250;
 static bool gHudWeaponPanel = true;
 static bool gHudClock = true;
 static int gHudWidthPercent = 100;
-static int gHudScalePercent = 130;
+// 100% is the safe area of the standard's near HUD (about 50 degrees across).
+static int gHudScalePercent = 100;
 // How far out the HUD plane sits. It was fixed at 2 m and read as too close.
 static int gHudDistanceCm = 300;
 static int gHudOffsetXCm;
@@ -580,7 +581,7 @@ LoadVrSettings(void)
 	gHudWidthPercent = Min(Max(GetPrivateProfileIntA("VR",
 		"HudWidthPercent", 100, ".\\vr_settings.ini"), 50), 200);
 	gHudScalePercent = Min(Max(GetPrivateProfileIntA("VR",
-		"HudScalePercent", 130, ".\\vr_settings.ini"), 50), 200);
+		"HudScalePercent", 100, ".\\vr_settings.ini"), 50), 200);
 	gHudDistanceCm = Min(Max((int)(int32)GetPrivateProfileIntA("VR",
 		"HudDistanceCm", 300, ".\\vr_settings.ini"), 150), 400);
 	// Win32-style profile reads return an unsigned value. Cast back to signed
