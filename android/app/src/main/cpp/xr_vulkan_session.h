@@ -31,6 +31,12 @@ void triggerHaptic(int hand, float amplitude, float frequencyHz, float durationM
 // closest rate the runtime offers and keeps retrying until confirmed. Safe
 // to call any time.
 void setPreferredDisplayRefreshRate(float hz);
+#if MIAMIVR_STEAM_FRAME
+// What the compositor runs at (from its frame period; 0 before the first
+// frame), the rate last requested through XR_FB_display_refresh_rate, and the
+// ceiling the worn fallback has stepped down to (0 = none).
+void getRefreshStatus(float *runningHz, float *requestedHz, float *capHz);
+#endif
 
 // OpenXR performance hint for the standalone runtime. Auto leaves a fresh
 // session entirely under runtime control; the two explicit modes provide
@@ -102,6 +108,10 @@ enum RenderScaleFallbackReason
 struct RenderScaleStatus
 {
 	int requestedPercent;
+#if MIAMIVR_STEAM_FRAME
+	// RenderScalePercent is 0: the scale was worked out for a 2160 wide eye.
+	bool automatic;
+#endif
 	int selectedPresetPercent;
 	float effectivePercent;
 	unsigned int recommendedWidth;

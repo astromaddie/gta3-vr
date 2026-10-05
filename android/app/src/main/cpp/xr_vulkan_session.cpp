@@ -51,7 +51,12 @@ static const uint32_t kBringupFragSpv[] =
 namespace xrvk {
 namespace {
 
+#if MIAMIVR_STEAM_FRAME
+// standard.md section 9: ask for 120 Hz, fall back to 90 and then 72.
+static constexpr float kTargetDisplayRefreshRateHz = 120.0f;
+#else
 static constexpr float kTargetDisplayRefreshRateHz = 72.0f;
+#endif
 
 // ---------------------------------------------------------------------------
 // Minimal column-major 4x4 maths. Column-major is what GLSL consumes directly,
@@ -305,6 +310,9 @@ struct State
 	uint32_t renderWidth = 0;
 	uint32_t renderHeight = 0;
 	int renderScaleRequestedPercent = 100;
+#if MIAMIVR_STEAM_FRAME
+	bool renderScaleAuto = false;
+#endif
 	int renderScaleSelectedPresetPercent = 100;
 	float renderScaleEffectivePercent = 100.0f;
 	uint32_t renderScaleRecommendedWidth = 0;
@@ -358,6 +366,26 @@ struct State
 	// Runtime-configurable target (vr_settings "RefreshRate"); the constant
 	// above remains the safe default.
 	float targetRefreshRateHz = kTargetDisplayRefreshRateHz;
+#if MIAMIVR_STEAM_FRAME
+	// What the compositor really runs at, from xrWaitFrame's
+	// predictedDisplayPeriod. SteamVR's per-app rate can differ from what
+	// XR_FB_display_refresh_rate reports, so this is the one to trust.
+	float measuredRefreshHz = 0.0f;
+	float requestedRefreshHz = 0.0f;
+	// Ceiling the worn fallback has stepped down to (0 = none yet).
+	float refreshCapHz = 0.0f;
+	// A request is due on the next focused frame. A lower rate than the
+	// compositor runs at is only requested when the player or the fallback
+	// asked for it (allowLower), never as the start-up default.
+	bool refreshApplyPending = false;
+	bool refreshApplyAllowLower = false;
+	bool refreshAppliedOnce = false;
+	// The fallback's view of the [vr-perf] windows.
+	bool perfWindowUnfocused = false;
+	bool perfSkipWindow = false;
+	int perfLowWindows = 0;
+	float perfLowFps[2] = {};
+#endif
 	float elapsed = 0.0f;
 
 	// XR_EXT_performance_settings supplies hints rather than hard clock locks.
@@ -1472,16 +1500,50 @@ createSwapchain(void)
 		LOGI("Quest render scale baseline reset to 100%%: result=%s",
 		     rescaled ? "applied" : "FAILED");
 	}
+	const uint32_t recommendedWidth =
+		g.viewConfigs[0].recommendedImageRectWidth;
+	const uint32_t recommendedHeight =
+		g.viewConfigs[0].recommendedImageRectHeight;
+#if MIAMIVR_STEAM_FRAME
+	// standard.md section 9: the default is whatever scale makes the eye image
+	// about 2160 wide, the panel's own resolution, computed from what the runtime
+	// recommends (1728 gives 125%; with SteamVR's per-app resolution already at
+	// 2160 it gives 100%). A scale the player picked in the menu (a number in
+	// RenderScalePercent, 75 to 150) overrides it; 0 or no key means automatic.
+	// Settings written before this profile hold the old Quest 100 default, which
+	// is not a choice, so they are reset to automatic once.
+	if((int)GetPrivateProfileIntA("VR", "FrameDisplayProfileVersion", 0,
+	                              settingsPath) < 1){
+		const bool reset =
+			WritePrivateProfileStringA("VR", "RenderScalePercent", "0",
+				settingsPath) &&
+			WritePrivateProfileStringA("VR", "FrameDisplayProfileVersion", "1",
+				settingsPath);
+		LOGI("[vr] display profile 1: render scale automatic (%s)",
+		     reset ? "applied" : "FAILED");
+	}
+	const int savedRenderScale = (int)GetPrivateProfileIntA(
+		"VR", "RenderScalePercent", 0, settingsPath);
+	const bool renderScaleAuto = savedRenderScale <= 0 || recommendedWidth == 0;
+	int renderScalePercent;
+	if(renderScaleAuto){
+		renderScalePercent = recommendedWidth > 0 ?
+			(int)(2160.0*100.0/(double)recommendedWidth + 0.5) : 100;
+	}else
+		renderScalePercent = savedRenderScale;
+	if(renderScalePercent < 75)
+		renderScalePercent = 75;
+	else if(renderScalePercent > 150)
+		renderScalePercent = 150;
+	g.renderScaleAuto = renderScaleAuto;
+#else
 	int renderScalePercent = (int)GetPrivateProfileIntA(
 		"VR", "RenderScalePercent", 100, settingsPath);
 	if(renderScalePercent < 100)
 		renderScalePercent = 100;
 	else if(renderScalePercent > 175)
 		renderScalePercent = 175;
-	const uint32_t recommendedWidth =
-		g.viewConfigs[0].recommendedImageRectWidth;
-	const uint32_t recommendedHeight =
-		g.viewConfigs[0].recommendedImageRectHeight;
+#endif
 	const uint32_t maxWidth = g.viewConfigs[0].maxImageRectWidth;
 	const uint32_t maxHeight = g.viewConfigs[0].maxImageRectHeight;
 	g.renderScaleRequestedPercent = renderScalePercent;
@@ -1587,10 +1649,14 @@ createSwapchain(void)
 	// reached. If the runtime cannot allocate the requested swapchain, retain
 	// the persisted request and retry the nearest lower menu presets for this
 	// launch only.
-	int scaleCandidates[4];
+	int scaleCandidates[6];
 	int scaleCandidateCount = 0;
 	scaleCandidates[scaleCandidateCount++] = renderScalePercent;
+#if MIAMIVR_STEAM_FRAME
+	static const int lowerScalePresets[] = { 150, 125, 100, 75 };
+#else
 	static const int lowerScalePresets[] = { 150, 125, 100 };
+#endif
 	for(int preset : lowerScalePresets)
 		if(preset < renderScalePercent)
 			scaleCandidates[scaleCandidateCount++] = preset;
@@ -1719,6 +1785,13 @@ createSwapchain(void)
 		g.renderWidth, g.renderHeight, renderScalePercent,
 		selectedScalePercent, selectedEffectiveScalePercent,
 		getRenderScaleFallbackReasonName(g.renderScaleFallbackReason));
+#if MIAMIVR_STEAM_FRAME
+	LOGI("[vr] render scale: recommended %ux%u, %s %d%% (selected %d%%), "
+	     "eye image %ux%u", recommendedWidth, recommendedHeight,
+	     renderScaleAuto ? "automatic for 2160 wide:" : "menu setting",
+	     renderScalePercent, selectedScalePercent, g.renderWidth,
+	     g.renderHeight);
+#endif
 	if(renderScaleFallback)
 		LOGW("render scale fallback active: request=%d%% actual=%.2f%% "
 		     "reason=%s",
@@ -2778,6 +2851,8 @@ struct PerfState
 };
 PerfState gPerf;
 
+static void refreshFallbackWindow(const char *perfLine);
+
 double
 diagNowSeconds(void)
 {
@@ -2793,8 +2868,10 @@ perfPoll(void)
 		gPerf.initialised = true;
 	}
 	char line[256];
-	if(sfvr_perf_poll(&gPerf.perf, diagNowSeconds(), line, sizeof(line)))
+	if(sfvr_perf_poll(&gPerf.perf, diagNowSeconds(), line, sizeof(line))){
 		LOGI("%s", line);
+		refreshFallbackWindow(line);
+	}
 }
 
 void
@@ -2811,6 +2888,8 @@ perfAddFrame(long long frameStartNs, XrTime displayTime, XrDuration period)
 	const bool missed = step > 0 && reference > 0 &&
 		(double)step > 1.5*(double)reference;
 	gPerf.lastDisplayTime = (long long)displayTime;
+	if(g.sessionState != XR_SESSION_STATE_FOCUSED)
+		g.perfWindowUnfocused = true;
 
 	const float totalMs = (float)((diagNowNs() - frameStartNs)*1e-6);
 	const float stageMs[2] = { totalMs > gPerf.gameMs ?
@@ -3298,9 +3377,125 @@ renderLayer(const XrView views[2])
 #endif
 }
 
+#if MIAMIVR_STEAM_FRAME
+// Frame refresh request (standard.md section 9). Picks the highest offered rate
+// that is not above the setting (or the fallback's ceiling), logs what was
+// offered, and asks for it. Frames are never held back for the display to
+// settle: SteamVR only offers the per-app rate set in its own settings, and the
+// extension can list less than the compositor runs, so a request that would
+// lower a faster compositor is skipped unless the player or the fallback asked
+// for the lower rate.
+static bool
+requestFrameRefreshRate(bool allowLower)
+{
+	const float setting = g.targetRefreshRateHz;
+	const float limit = g.refreshCapHz > 0.0f && g.refreshCapHz < setting ?
+		g.refreshCapHz : setting;
+	if(!g.hasRefreshRateExt || g.enumerateRefreshRates == nullptr ||
+	   g.getRefreshRate == nullptr || g.requestRefreshRate == nullptr){
+		LOGI("[vr] refresh: setting %.0f, offered {} (no XR_FB_display_refresh_rate; "
+		     "SteamVR's per-app rate applies), requested none", setting);
+		return false;
+	}
+	uint32_t count = 0;
+	std::vector<float> rates;
+	if(XR_SUCCEEDED(g.enumerateRefreshRates(g.session, 0, &count, nullptr)) &&
+	   count > 0){
+		rates.resize(count);
+		if(XR_FAILED(g.enumerateRefreshRates(g.session, count, &count,
+		                                     rates.data())))
+			rates.clear();
+		else
+			rates.resize(count);
+	}
+	char list[160] = "";
+	for(size_t i = 0; i < rates.size(); i++){
+		char one[24];
+		snprintf(one, sizeof(one), "%s%.0f", i ? ", " : "", rates[i]);
+		strncat(list, one, sizeof(list) - strlen(list) - 1);
+	}
+	if(rates.empty()){
+		LOGI("[vr] refresh: setting %.0f, offered {%s}, requested none "
+		     "(the runtime lists no rates)", setting, list);
+		return false;
+	}
+	float best = 0.0f, lowest = rates[0];
+	for(float rate : rates){
+		if(rate <= limit + 0.5f && rate > best)
+			best = rate;
+		if(rate < lowest)
+			lowest = rate;
+	}
+	if(best <= 0.0f)
+		best = lowest;
+	g.requestedRefreshHz = best;
+	if(g.measuredRefreshHz > best + 1.0f && !allowLower){
+		LOGI("[vr] refresh: setting %.0f, offered {%s}, requested %.0f "
+		     "(skipped: the compositor already runs %.1f Hz)",
+		     setting, list, best, g.measuredRefreshHz);
+		return true;
+	}
+	const XrResult result = g.requestRefreshRate(g.session, best);
+	float now = 0.0f;
+	if(XR_SUCCEEDED(g.getRefreshRate(g.session, &now)) && now > 0.0f)
+		g.currentRefreshRateHz = now;
+	LOGI("[vr] refresh: setting %.0f, offered {%s}, requested %.0f "
+	     "(result %d, extension reports %.1f Hz, compositor %.1f Hz)",
+	     setting, list, best, (int)result, g.currentRefreshRateHz,
+	     g.measuredRefreshHz);
+	return XR_SUCCEEDED(result);
+}
+
+// Called with each [vr-perf] line. While worn (focused for the whole window),
+// two windows in a row under 90% of the current rate step the ceiling down,
+// 120 -> 90 -> 72.
+static void
+refreshFallbackWindow(const char *perfLine)
+{
+	const bool wholeWindowFocused = !g.perfWindowUnfocused &&
+		g.sessionState == XR_SESSION_STATE_FOCUSED;
+	g.perfWindowUnfocused = g.sessionState != XR_SESSION_STATE_FOCUSED;
+	const char *at = strstr(perfLine, "fps=");
+	const float fps = at != nullptr ? (float)atof(at + 4) : 0.0f;
+	if(g.perfSkipWindow){
+		// The window a rate change landed in does not count.
+		g.perfSkipWindow = false;
+		g.perfLowWindows = 0;
+		return;
+	}
+	const float rate = g.measuredRefreshHz > 0.0f ? g.measuredRefreshHz :
+		g.currentRefreshRateHz;
+	if(!wholeWindowFocused || rate <= 0.0f || fps >= rate*0.9f){
+		g.perfLowWindows = 0;
+		return;
+	}
+	g.perfLowFps[g.perfLowWindows < 2 ? g.perfLowWindows : 1] = fps;
+	if(++g.perfLowWindows < 2)
+		return;
+	g.perfLowWindows = 0;
+	const float next = rate >= 100.0f ? 90.0f : rate >= 80.0f ? 72.0f : 0.0f;
+	if(next <= 0.0f){
+		LOGI("[vr] refresh fallback: %.1f then %.1f fps under 90%% of %.0f Hz, "
+		     "already at the lowest step (72)", g.perfLowFps[0],
+		     g.perfLowFps[1], rate);
+		return;
+	}
+	LOGI("[vr] refresh fallback: two [vr-perf] windows under 90%% of %.0f Hz "
+	     "(%.1f then %.1f fps), stepping down to %.0f",
+	     rate, g.perfLowFps[0], g.perfLowFps[1], next);
+	g.refreshCapHz = next;
+	g.refreshApplyPending = true;
+	g.refreshApplyAllowLower = true;
+	g.perfSkipWindow = true;
+}
+#endif
+
 bool
 requestPreferredDisplayRefreshRate(void)
 {
+#if MIAMIVR_STEAM_FRAME
+	return requestFrameRefreshRate(false);
+#endif
 	if(!g.hasRefreshRateExt || g.enumerateRefreshRates == nullptr ||
 	   g.getRefreshRate == nullptr || g.requestRefreshRate == nullptr)
 		return false;
@@ -3668,6 +3863,9 @@ getRenderScaleStatus(RenderScaleStatus *out)
 	if(out == nullptr || g.renderWidth == 0 || g.renderHeight == 0)
 		return false;
 	out->requestedPercent = g.renderScaleRequestedPercent;
+#if MIAMIVR_STEAM_FRAME
+	out->automatic = g.renderScaleAuto;
+#endif
 	out->selectedPresetPercent = g.renderScaleSelectedPresetPercent;
 	out->effectivePercent = g.renderScaleEffectivePercent;
 	out->recommendedWidth = g.renderScaleRecommendedWidth;
@@ -3770,6 +3968,16 @@ getPerformanceMetrics(PerformanceMetrics *out)
 		g.appGpuFrameTimeValid;
 	return g.hasPerformanceMetricsExt;
 }
+
+#if MIAMIVR_STEAM_FRAME
+void
+getRefreshStatus(float *runningHz, float *requestedHz, float *capHz)
+{
+	if(runningHz) *runningHz = g.measuredRefreshHz;
+	if(requestedHz) *requestedHz = g.requestedRefreshHz;
+	if(capHz) *capHz = g.refreshCapHz;
+}
+#endif
 
 long long
 getPredictedDisplayTimeNs(void)
@@ -3982,10 +4190,20 @@ setPreferredDisplayRefreshRate(float hz)
 	   fabsf(hz - g.targetRefreshRateHz) < 0.5f)
 		return;
 	g.targetRefreshRateHz = hz;
+#if MIAMIVR_STEAM_FRAME
+	// One request on the next focused frame. A change after the first apply is
+	// the player's choice, so it may go lower than the compositor runs; it also
+	// clears the fallback's ceiling.
+	g.refreshApplyPending = true;
+	g.refreshApplyAllowLower = g.refreshAppliedOnce;
+	g.refreshCapHz = 0.0f;
+	g.perfLowWindows = 0;
+#else
 	// Re-arm the retry pump in renderFrame; it re-requests on the next
 	// focused frame and keeps retrying until the display confirms.
 	g.refreshRateRetryCount = 0;
 	g.nextRefreshRateRetryTime = 0;
+#endif
 	LOGI("display refresh target set to %.1f Hz", hz);
 }
 
@@ -4127,7 +4345,12 @@ pollEvents(void)
 					XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
 				if(XR_SUCCEEDED(xrBeginSession(g.session, &beginInfo))){
 					g.running = true;
+#if MIAMIVR_STEAM_FRAME
+					// Never hold frames for a rate: SteamVR decides it.
+					g.refreshRateReadyForFrames = true;
+#else
 					g.refreshRateReadyForFrames = !g.hasRefreshRateExt;
+#endif
 					applyAndroidThreadSettings("session READY");
 					g.refreshRateRequestAttempted = false;
 					g.refreshRateRetryCount = 0;
@@ -4143,6 +4366,12 @@ pollEvents(void)
 				applyGpuPerformanceMode(true);
 				// Apply the stable 72 Hz target after the session owns focus.
 				// This avoids frame-rate changes while the game is running.
+#if MIAMIVR_STEAM_FRAME
+				if(!g.refreshRateRequestAttempted){
+					g.refreshRateRequestAttempted = true;
+					g.refreshApplyPending = true;   // sent after xrWaitFrame
+				}
+#else
 				if(!g.refreshRateRequestAttempted){
 					g.refreshRateRequestAttempted = true;
 					const bool requested =
@@ -4157,6 +4386,7 @@ pollEvents(void)
 						     g.targetRefreshRateHz);
 					g.refreshRateRetryCount = 1;
 				}
+#endif
 			}else if(g.sessionState == XR_SESSION_STATE_STOPPING){
 				g.running = false;
 				xrEndSession(g.session);
@@ -4208,6 +4438,12 @@ pollEvents(void)
 			const XrEventDataDisplayRefreshRateChangedFB &changed =
 				*(const XrEventDataDisplayRefreshRateChangedFB *)&event;
 			g.currentRefreshRateHz = changed.toDisplayRefreshRate;
+#if MIAMIVR_STEAM_FRAME
+			LOGI("display refresh changed: %.1f -> %.1f Hz",
+			     changed.fromDisplayRefreshRate,
+			     changed.toDisplayRefreshRate);
+			break;
+#endif
 			g.refreshRateReadyForFrames =
 				fabsf(changed.toDisplayRefreshRate -
 				      g.targetRefreshRateHz) < 0.5f;
@@ -4327,9 +4563,20 @@ renderFrame(void)
 			finishPerformanceBoost("25 second timeout", false);
 	}
 
+#if MIAMIVR_STEAM_FRAME
+	if(frameState.predictedDisplayPeriod > 0)
+		g.measuredRefreshHz = 1.0e9f/(float)frameState.predictedDisplayPeriod;
+	if(g.sessionState == XR_SESSION_STATE_FOCUSED && g.refreshApplyPending){
+		g.refreshApplyPending = false;
+		requestFrameRefreshRate(g.refreshApplyAllowLower);
+		g.refreshAppliedOnce = true;
+		g.refreshApplyAllowLower = false;
+	}
+#endif
 	// A focused Quest session can acknowledge a rate request before the display
 	// has actually switched. Retry at a low rate for a bounded period, stopping
 	// as soon as the runtime confirms the stable 72 Hz target.
+#if !MIAMIVR_STEAM_FRAME
 	if(g.sessionState == XR_SESSION_STATE_FOCUSED && g.hasRefreshRateExt &&
 	   g.getRefreshRate != nullptr && g.refreshRateRetryCount < 8 &&
 	   (g.nextRefreshRateRetryTime == 0 ||
@@ -4350,6 +4597,7 @@ renderFrame(void)
 				frameState.predictedDisplayTime + (XrTime)1000000000;
 		}
 	}
+#endif
 
 	XrFrameBeginInfo beginInfo = { XR_TYPE_FRAME_BEGIN_INFO };
 	if(XR_FAILED(xrBeginFrame(g.session, &beginInfo)))

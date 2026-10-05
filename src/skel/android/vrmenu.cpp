@@ -216,7 +216,11 @@ static bool gCutsceneStoreDown;
 #if defined(MIAMIVR_DEV_TOOLS) && MIAMIVR_DEV_TOOLS
 static bool gQuestQuickTestStart;
 #endif
+#if MIAMIVR_STEAM_FRAME
+static int gQuestRenderScalePercent = 0;   // 0: automatic, about 2160 wide
+#else
 static int gQuestRenderScalePercent = 100;
+#endif
 static int gQuestSgsrMode = rw::vulkan::SGSR_OFF;
 static int gQuestMsaaSamples = 1;
 static bool gGameplayHudEnabled = true;
@@ -242,7 +246,11 @@ static int gQuestMovementOrientation = 1;
 static int gQuestHeadBobbing = 0;
 // 72 is the safe default; the Quest 3 display also offers 80/90/120 and the
 // game holds 90 with headroom after the traffic director work.
+#if MIAMIVR_STEAM_FRAME
+static int gQuestRefreshRateHz = 120;
+#else
 static int gQuestRefreshRateHz = 72;
+#endif
 static int gQuestTurnMode;
 static int gQuestTurnSensitivityPercent = 100;
 static int gQuestHeadSteeringSensitivityPercent = 50;
@@ -546,9 +554,16 @@ LoadVrSettings(void)
 			".\\vr_settings.ini") != 0;
 #endif
 	{
+#if MIAMIVR_STEAM_FRAME
+		// 0 is automatic: whatever makes the eye image about 2160 wide.
+		static const int scales[] = { 0, 75, 100, 125, 150 };
+		const int savedScale = GetPrivateProfileIntA("VR", "RenderScalePercent",
+			0, ".\\vr_settings.ini");
+#else
 		static const int scales[] = { 100, 125, 150, 175 };
 		const int savedScale = GetPrivateProfileIntA("VR", "RenderScalePercent",
 			100, ".\\vr_settings.ini");
+#endif
 		int best = 0;
 		for(int i = 1; i < (int)ARRAY_SIZE(scales); i++)
 			if(Abs(scales[i]-savedScale) < Abs(scales[best]-savedScale))
@@ -597,8 +612,13 @@ LoadVrSettings(void)
 		(int)QUEST_MOVEMENT_ORIENTATION_COUNT-1);
 	gQuestHeadBobbing = GetPrivateProfileIntA("VR", "HeadBobbing", 0,
 		".\\vr_settings.ini") != 0;
+#if MIAMIVR_STEAM_FRAME
+	gQuestRefreshRateHz = Min(Max(GetPrivateProfileIntA("VR",
+		"RefreshRate", 120, ".\\vr_settings.ini"), 72), 120);
+#else
 	gQuestRefreshRateHz = Min(Max(GetPrivateProfileIntA("VR",
 		"RefreshRate", 72, ".\\vr_settings.ini"), 72), 120);
+#endif
 	androidgame::SetPreferredRefreshRate(gQuestRefreshRateHz);
 	const int persistedCpuPerformanceMode = GetPrivateProfileIntA("VR",
 		"CpuPerformanceMode", QUEST_CPU_PERFORMANCE_SUSTAINED,
@@ -1291,7 +1311,11 @@ VrDebugUpdate(const PadInput &in)
 		}else if(gVrMenuPage == VR_MENU_PAGE_GRAPHICS &&
 		         (positivePulse || decreasePulse)){
 			if(gVrGraphicsSelection == VR_GRAPHICS_RENDER_SCALE){
+#if MIAMIVR_STEAM_FRAME
+				static const int scales[] = { 0, 75, 100, 125, 150 };
+#else
 				static const int scales[] = { 100, 125, 150, 175 };
+#endif
 				int index = 0;
 				for(int i = 0; i < (int)ARRAY_SIZE(scales); i++)
 					if(scales[i] == gQuestRenderScalePercent)
@@ -1515,7 +1539,11 @@ VrDebugUpdate(const PadInput &in)
 				break;
 #endif
 			case VR_LOCOMOTION_REFRESH_RATE: {
+#if MIAMIVR_STEAM_FRAME
+				static const int rates[] = { 72, 90, 120 };
+#else
 				static const int rates[] = { 72, 80, 90, 120 };
+#endif
 				const int count =
 					(int)(sizeof(rates)/sizeof(rates[0]));
 				int index = 0;
@@ -1732,6 +1760,23 @@ DrawQuestGraphicsPage(void)
 	xrvk::RenderScaleStatus scaleStatus = {};
 	const bool scaleStatusValid = xrvk::getRenderScaleStatus(&scaleStatus);
 	char rows[VR_GRAPHICS_ITEM_COUNT][112];
+#if MIAMIVR_STEAM_FRAME
+	// The eye image the headset is really getting, and the setting that made it.
+	if(scaleStatusValid){
+		char setting[16];
+		if(gQuestRenderScalePercent <= 0)
+			snprintf(setting, sizeof(setting), "AUTO");
+		else
+			snprintf(setting, sizeof(setting), "%d%%", gQuestRenderScalePercent);
+		snprintf(rows[VR_GRAPHICS_RENDER_SCALE], sizeof(rows[0]),
+			"RENDER SCALE < %s >  %ux%u (%.0f%%) - RESTART", setting,
+			scaleStatus.actualWidth, scaleStatus.actualHeight,
+			scaleStatus.effectivePercent);
+	}else
+		snprintf(rows[VR_GRAPHICS_RENDER_SCALE], sizeof(rows[0]),
+			"RENDER SCALE  < %s - RESTART >",
+			gQuestRenderScalePercent <= 0 ? "AUTO" : "SET");
+#else
 	if(scaleStatusValid)
 		snprintf(rows[VR_GRAPHICS_RENDER_SCALE], sizeof(rows[0]),
 			"OUTPUT REQUEST < %d%% >  ACTIVE %.0f%% - RESTART",
@@ -1740,6 +1785,7 @@ DrawQuestGraphicsPage(void)
 		snprintf(rows[VR_GRAPHICS_RENDER_SCALE], sizeof(rows[0]),
 			"OUTPUT REQUEST  < %d%% - RESTART >",
 			gQuestRenderScalePercent);
+#endif
 	snprintf(rows[VR_GRAPHICS_SGSR], sizeof(rows[0]),
 		"TEMPORAL AA < DISABLED - UNSTABLE >");
 	snprintf(rows[VR_GRAPHICS_MSAA], sizeof(rows[0]),
@@ -1932,8 +1978,28 @@ DrawQuestLocomotionPage(void)
 		"CAR VIEW  < %s >",
 		gVehicleFollowRotation ? "FOLLOWS TILT" : "LEVEL HORIZON");
 #endif
+#if MIAMIVR_STEAM_FRAME
+	{
+		// What SteamVR is really running at, and the ceiling the worn fallback
+		// has stepped down to, next to the setting.
+		float running = 0.0f, requested = 0.0f, cap = 0.0f;
+		xrvk::getRefreshStatus(&running, &requested, &cap);
+		if(cap > 0.0f && cap < (float)gQuestRefreshRateHz)
+			snprintf(rows[VR_LOCOMOTION_REFRESH_RATE], sizeof(rows[0]),
+				"REFRESH RATE  < %d HZ >  RUNNING %.0f, FELL BACK TO %.0f",
+				gQuestRefreshRateHz, running, cap);
+		else if(running > 0.0f)
+			snprintf(rows[VR_LOCOMOTION_REFRESH_RATE], sizeof(rows[0]),
+				"REFRESH RATE  < %d HZ >  RUNNING %.0f HZ",
+				gQuestRefreshRateHz, running);
+		else
+			snprintf(rows[VR_LOCOMOTION_REFRESH_RATE], sizeof(rows[0]),
+				"REFRESH RATE  < %d HZ >", gQuestRefreshRateHz);
+	}
+#else
 	snprintf(rows[VR_LOCOMOTION_REFRESH_RATE], sizeof(rows[0]),
 		"REFRESH RATE  < %d HZ >", gQuestRefreshRateHz);
+#endif
 	strcpy(rows[VR_LOCOMOTION_RECENTER], "RECENTER VIEW");
 	strcpy(rows[VR_LOCOMOTION_BACK], "BACK TO SETTINGS");
 #if MIAMIVR_STEAM_FRAME

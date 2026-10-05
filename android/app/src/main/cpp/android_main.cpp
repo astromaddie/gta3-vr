@@ -68,8 +68,19 @@ autoResetRenderScaleAfterGameInitialiseFailure(void)
 		return;
 	}
 
+#if MIAMIVR_STEAM_FRAME
+	// 0 or no key is the automatic ~2160 scale; what it came to is in the status.
+	int persistedScale = (int)GetPrivateProfileIntA(
+		"VR", "RenderScalePercent", 0, settingsPath);
+	if(persistedScale <= 0){
+		xrvk::RenderScaleStatus status = {};
+		persistedScale = xrvk::getRenderScaleStatus(&status) ?
+			(int)(status.effectivePercent + 0.5f) : 0;
+	}
+#else
 	const int persistedScale = (int)GetPrivateProfileIntA(
 		"VR", "RenderScalePercent", 100, settingsPath);
+#endif
 	if(persistedScale <= 100)
 		return;
 
