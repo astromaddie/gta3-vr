@@ -22,6 +22,7 @@ import sys
 from pathlib import Path
 
 SRC = Path(__file__).resolve().parents[3] / "android/app/src/main/cpp/xr_vulkan_session.cpp"
+PAD_SRC = Path(__file__).resolve().parents[3] / "src/skel/android/android.cpp"
 
 POSES = {"grip/pose", "aim/pose"}
 HAPTIC = {"output/haptic"}
@@ -61,6 +62,27 @@ SYSTEM_NEEDS = ["g.menuAction", "g.viewAction"]
 def tables(text):
     for m in re.finditer(r"const Binding (\w+)\[\] = \{(.*?)\n\t\};", text, re.S):
         yield m.group(1), m.group(2)
+
+
+def check_vehicle_grips():
+    """The grips are never a driving control (Vice City's right grip was a second
+    handbrake; the user wants grips to stay action/interact buttons). The driving
+    layout in android.cpp must not read them, so A is the only handbrake."""
+    text = PAD_SRC.read_text()
+    m = re.search(r"static void\s+ApplyVehiclePadLayout\(.*?\n\}\n", text, re.S)
+    if not m:
+        print("FAIL: ApplyVehiclePadLayout not found in android.cpp")
+        return 1
+    body = m.group(0)
+    bad = 0
+    if re.search(r"leftGrip|rightGrip", body):
+        print("FAIL: ApplyVehiclePadLayout reads a grip; grips must do nothing in a vehicle")
+        bad += 1
+    if not re.search(r"VEHICLE_ACTION_HANDBRAKE,\s*input\.a\b", body):
+        print("FAIL: the handbrake is not on A in ApplyVehiclePadLayout")
+        bad += 1
+    print("vehicle layout: grips unbound, A is the handbrake" if not bad else "")
+    return bad
 
 
 def main():
@@ -109,6 +131,7 @@ def main():
         if table not in found:
             print(f"FAIL: binding table {table} not found")
             bad += 1
+    bad += check_vehicle_grips()
     print("bindings OK" if not bad else f"{bad} problem(s)")
     return 1 if bad else 0
 
