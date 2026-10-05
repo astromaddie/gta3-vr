@@ -306,9 +306,12 @@ an eye, the panel's own size.
   windows in a row (10 s each) under 90% of the display rate make the game log
   once: `[vr] refresh: not holding 120 Hz (fps X, Y); set GTA3VR to 90 Hz in
   SteamVR per-app settings`, with the highest of 120, 90 and 72 the measured fps
-  would hold. The LOCOMOTION row shows what SteamVR is really running at. (A run
-  that held 120 for about 30 s and then sat at exactly 60 looked like SteamVR
-  throttling to half rate; that is being re-measured.)
+  would hold. The LOCOMOTION row shows what SteamVR is really running at. (Measured on the Frame with nobody wearing it, 2026-10-05, in the rainy
+  opening cutscene at 2160 per eye. With DRAW DISTANCE 250% it holds 120 for
+  about 30 s, then misses frames and SteamVR halves it to a flat 60. At 100% it
+  mostly holds 120, with dips to 89 to 117. Render scale 75% (1620 per eye) did
+  not help, so the cost is the extra scenery that draw distance brings in, not
+  pixels. Game CPU is 1.2 to 2 ms a frame at 120. Open play is not measured yet.)
 - **Wear checklist.** Set GTA3VR to 120 Hz in SteamVR's per-app settings, and the
   resolution to 2160 (done once, 2026-10-05). Check the log says
   `compositor 120` after `[vr] refresh:` and `eye image 2160x2160` after
