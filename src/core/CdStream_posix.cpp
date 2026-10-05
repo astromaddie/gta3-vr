@@ -5,6 +5,7 @@
 #include <signal.h>
 #include <pthread.h>
 #include <semaphore.h>
+#include <time.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include <sys/time.h>
@@ -395,6 +396,45 @@ CdStreamGetLastPosn(void)
 }
 
 // wait for channel to finish reading
+// The game thread and the stream thread hand a read over through bLocked,
+// bReading and nSectorsToRead without a lock. With plain accesses each side
+// could miss the other's store (ARM reorders them, the compiler may keep a
+// stale copy), the stream thread then skipped its wake-up post and
+// CdStreamSync slept for ever: Vice City froze loading its first scene on the
+// Steam Frame (2026-10-05). The flags are now read and written sequentially
+// consistent, so at least one side always sees the other, and the wait wakes
+// every 20 ms to look again, so a missed post costs milliseconds, not the game.
+static bool
+CdStreamChannelBusy(CdReadInfo *pChannel, bool flushing)
+{
+	if(!__atomic_load_n(&pChannel->bLocked, __ATOMIC_SEQ_CST))
+		return false;
+	return flushing ? __atomic_load_n(&pChannel->bReading, __ATOMIC_SEQ_CST)
+		: __atomic_load_n(&pChannel->nSectorsToRead, __ATOMIC_SEQ_CST) != 0;
+}
+
+static void
+CdStreamWaitForChannel(int32 channel, bool flushing)
+{
+	CdReadInfo *pChannel = &gpReadInfo[channel];
+	int32 waitedMs = 0;
+	while(CdStreamChannelBusy(pChannel, flushing)){
+		struct timespec until;
+		clock_gettime(CLOCK_REALTIME, &until);
+		until.tv_nsec += 20 * 1000000L;
+		if(until.tv_nsec >= 1000000000L){
+			until.tv_sec += 1;
+			until.tv_nsec -= 1000000000L;
+		}
+		if(sem_timedwait(pChannel->pDoneSemaphore, &until) != 0){
+			waitedMs += 20;
+			if(waitedMs % 5000 == 0)
+				debug("cdstream: channel %d still busy after %d ms (reading %d, sectors %u)\n",
+				      channel, waitedMs, (int)pChannel->bReading, (unsigned)pChannel->nSectorsToRead);
+		}
+	}
+}
+
 int32
 CdStreamSync(int32 channel)
 {
@@ -407,15 +447,15 @@ CdStreamSync(int32 channel)
 		pChannel->nSectorsToRead = 0;
 #ifdef ONE_THREAD_PER_CHANNEL
 		pthread_kill(pChannel->pChannelThread, SIGUSR1);
-		if (pChannel->bReading) {
-			pChannel->bLocked = true;
+		if (__atomic_load_n(&pChannel->bReading, __ATOMIC_SEQ_CST)) {
+			__atomic_store_n(&pChannel->bLocked, true, __ATOMIC_SEQ_CST);
 #else
-		if (pChannel->bReading) {
-			pChannel->bLocked = true;
+		if (__atomic_load_n(&pChannel->bReading, __ATOMIC_SEQ_CST)) {
+			__atomic_store_n(&pChannel->bLocked, true, __ATOMIC_SEQ_CST);
 			pthread_kill(_gCdStreamThread, SIGUSR1);
 #endif
-			while (pChannel->bLocked)
-				sem_wait(pChannel->pDoneSemaphore);
+			CdStreamWaitForChannel(channel, true);
+			__atomic_store_n(&pChannel->bLocked, false, __ATOMIC_SEQ_CST);
 		}
 		pChannel->bReading = false;
 		flushStream[channel] = false;
@@ -423,13 +463,11 @@ CdStreamSync(int32 channel)
 	}
 #endif
 
-	if ( pChannel->nSectorsToRead != 0 )
+	if ( __atomic_load_n(&pChannel->nSectorsToRead, __ATOMIC_SEQ_CST) != 0 )
 	{
-		pChannel->bLocked = true;
-		while (pChannel->bLocked && pChannel->nSectorsToRead != 0){
-			sem_wait(pChannel->pDoneSemaphore);
-		}
-		pChannel->bLocked = false;
+		__atomic_store_n(&pChannel->bLocked, true, __ATOMIC_SEQ_CST);
+		CdStreamWaitForChannel(channel, false);
+		__atomic_store_n(&pChannel->bLocked, false, __ATOMIC_SEQ_CST);
 	}
 
 	pChannel->bReading = false;
@@ -500,7 +538,7 @@ void *CdStreamThread(void *param)
 		if(pChannel->nSectorsToRead == 0)
 			continue;
 
-		pChannel->bReading = true;
+		__atomic_store_n(&pChannel->bReading, true, __ATOMIC_SEQ_CST);
 
 		// Not standard POSIX :shrug:
 #ifdef __linux__
@@ -534,13 +572,10 @@ void *CdStreamThread(void *param)
 		RemoveFirstInQueue(&gChannelRequestQ);
 #endif
 
-		pChannel->nSectorsToRead = 0;
-		if ( pChannel->bLocked )
-		{
-			pChannel->bLocked = 0;
+		__atomic_store_n(&pChannel->nSectorsToRead, 0, __ATOMIC_SEQ_CST);
+		if ( __atomic_exchange_n(&pChannel->bLocked, false, __ATOMIC_SEQ_CST) )
 			sem_post(pChannel->pDoneSemaphore);
-		}
-		pChannel->bReading = false;
+		__atomic_store_n(&pChannel->bReading, false, __ATOMIC_SEQ_CST);
 	}
 	char semName[20];
 #ifndef ONE_THREAD_PER_CHANNEL
