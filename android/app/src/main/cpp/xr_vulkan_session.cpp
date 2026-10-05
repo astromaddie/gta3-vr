@@ -430,6 +430,8 @@ struct State
 	bool ptrHit = false;
 	bool ptrHeadValid = false;
 	XrVector3f ptrOrigin = {}, ptrDir = {}, ptrHitPos = {}, ptrHead = {};
+	// Orientation of the surface the ray hit (menu panel or theater screen).
+	XrQuaternionf ptrHitOrientation = { 0.0f, 0.0f, 0.0f, 1.0f };
 	// What the last frame submitted, for the dump's flat composite.
 	struct DiagLayers {
 		bool valid = false;
@@ -2443,6 +2445,7 @@ updatePointer(const XrView views[2], bool theaterSurface, const XrPosef &theater
 	if(hitMenu && (!hitTheater || tM <= tT)){
 		g.ptrHit = true;
 		g.ptrHitPos = ptAdd(origin, ptScale(dir, tM));
+		g.ptrHitOrientation = menuPose.orientation;
 		in.pointerMenu = true;
 		in.menuU = uM;
 		in.menuV = vM;
@@ -2450,6 +2453,7 @@ updatePointer(const XrView views[2], bool theaterSurface, const XrPosef &theater
 	}else if(hitTheater){
 		g.ptrHit = true;
 		g.ptrHitPos = ptAdd(origin, ptScale(dir, tT));
+		g.ptrHitOrientation = theaterPose.orientation;
 		in.pointerFrontend = true;
 		in.frontendU = uT;
 		in.frontendV = vT;
@@ -2576,7 +2580,32 @@ presentPointerLayers(XrSpace space, XrCompositionLayerQuad quads[2])
 	const XrVector3f up = { 0.0f, 1.0f, 0.0f };
 	const XrVector3f o = g.ptrOrigin, d = g.ptrDir;
 	const float missLength = 1.5f;
-	const XrVector3f end = g.ptrHit ? g.ptrHitPos : ptAdd(o, ptScale(d, missLength));
+
+	// The surface the ray hit: its normal (+Z of the pose) turned to face the
+	// head. The dot lies on it and the beam stops short of it, because
+	// SteamVR depth-composites quads that intersect, so a dot or beam tip
+	// poking through the panel would be cut in half and z-fight.
+	XrVector3f surfN = { 0.0f, 0.0f, 1.0f };
+	if(g.ptrHit){
+		surfN = ptNorm(ptRotate(g.ptrHitOrientation, { 0.0f, 0.0f, 1.0f }),
+		               ptScale(d, -1.0f));
+		const XrVector3f toHead = g.ptrHeadValid ?
+			ptSub(g.ptrHead, g.ptrHitPos) : ptScale(d, -1.0f);
+		if(ptDot(surfN, toHead) < 0.0f)
+			surfN = ptScale(surfN, -1.0f);
+	}
+	XrVector3f end = ptAdd(o, ptScale(d, missLength));
+	if(g.ptrHit){
+		const XrVector3f full = ptSub(g.ptrHitPos, o);
+		const float fullLen = sqrtf(ptDot(full, full));
+		float cosine = fabsf(ptDot(d, surfN));
+		if(cosine < 0.25f)
+			cosine = 0.25f;
+		float back = 0.02f/cosine;
+		if(fullLen - back < 0.03f)
+			back = fullLen > 0.03f ? fullLen - 0.03f : 0.0f;
+		end = ptAdd(g.ptrHitPos, ptScale(d, -back));
+	}
 	const XrVector3f span = ptSub(end, o);
 	const float length = sqrtf(ptDot(span, span));
 	int count = 0;
@@ -2611,19 +2640,17 @@ presentPointerLayers(XrSpace space, XrCompositionLayerQuad quads[2])
 		++count;
 	}
 	if(g.ptrHit){
-		// The dot faces the head and stays upright about world up, so it never
-		// rolls with the head.
-		XrVector3f z = g.ptrHeadValid ? ptSub(g.ptrHead, end) : ptScale(d, -1.0f);
-		const float dist = sqrtf(ptDot(z, z));
-		z = ptNorm(z, ptScale(d, -1.0f));
-		XrVector3f x = ptCross(up, z);
-		x = ptNorm(x, XrVector3f{ 1.0f, 0.0f, 0.0f });
-		const XrVector3f y = ptCross(z, x);
+		// The dot lies flat on the surface it hit, a little in front of it, so
+		// none of it can sink behind the panel. Panel and screen are
+		// yaw-anchored, so it never rolls with the head.
+		const XrVector3f dotPos = ptAdd(g.ptrHitPos, ptScale(surfN, 0.012f));
+		const XrVector3f toHead = g.ptrHeadValid ? ptSub(g.ptrHead, g.ptrHitPos) : ptScale(d, -1.0f);
+		const float dist = sqrtf(ptDot(toHead, toHead));
 		float size = (g.ptrHeadValid ? dist : length)*0.05f;
 		size = size < 0.04f ? 0.04f : size > 0.14f ? 0.14f : size;
 		baseQuad(quads[count], g.pointerDown ? 64 : 0, 0, 64, 64);
-		quads[count].pose.orientation = ptFromAxes(x, y, z);
-		quads[count].pose.position = end;
+		quads[count].pose.orientation = g.ptrHitOrientation;
+		quads[count].pose.position = dotPos;
 		quads[count].size = { size, size };
 		++count;
 	}
