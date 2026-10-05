@@ -1417,18 +1417,21 @@ void CHud::DrawAfterFade()
 #if defined(RW_VULKAN) && defined(__ANDROID__)
 			if (!androidgame::VrHudLayoutIsTheater()) {
 				// In the headset the corner this box sits in is the far edge
-				// of the eye, and the HUD plane is scaled in around the centre
-				// besides, so the text was small and out in the periphery. Draw
-				// it larger and put it in the comfortable field instead: top
-				// centre, a little below the middle of the upper half.
-				const float vrHelpScale = 1.35f;
+				// of the eye, so it sits in the comfortable field instead:
+				// upper left, clear of the middle of the view. Round 2 made it
+				// 1.35x and put it top centre; worn, that was too big and too
+				// central. 1.14 at the 100% HUD scale is 0.65x of that angular
+				// size (1.35 at the old 130% default), and the box starts 20
+				// units in from the left, about 23 degrees left of straight
+				// ahead, instead of centred.
+				const float vrHelpScale = 1.14f;
 				const float boxWidth = helpWrapWidth - SCREEN_SCALE_X(26.0f);
 				helpScaleX *= vrHelpScale;
 				helpScaleY *= vrHelpScale;
 				helpWrapWidth = boxWidth * vrHelpScale;
-				helpLeft = SCREEN_WIDTH * 0.5f - helpWrapWidth * 0.5f;
+				helpLeft = SCREEN_SCALE_X(20.0f);
 				helpWrapWidth += helpLeft;
-				helpTop = SCREEN_HEIGHT * 0.5f - SCREEN_SCALE_Y(150.0f);
+				helpTop = SCREEN_HEIGHT * 0.5f - SCREEN_SCALE_Y(170.0f);
 			}
 #endif
 			CFont::SetScale(helpScaleX, helpScaleY);
