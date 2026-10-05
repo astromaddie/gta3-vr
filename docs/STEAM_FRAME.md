@@ -7,14 +7,20 @@ III. The easy way is to install it on the Frame through Steam (app 12100); the
 game reads it from there and there is nothing to copy. A PC install works too.
 
 It is early. It boots, starts a new game and renders in stereo. It has been worn
-twice. The first time the minimap showed no roads and the in-car buttons were
-muddled. The second time (over the shoulder) the controls felt good and the
+three times. The first time the minimap showed no roads and the in-car buttons
+were muddled. The second time (over the shoulder) the controls felt good and the
 opening and cutscenes looked good, and it turned up five things: the camera came
 off Claude when he got out of a car, he always faced where the camera looked
 instead of turning to walk, the draw distance was too short, the help pop-up
 could not be read and the HUD sat too close, and the mission title was the wrong
-shape. All of that is fixed in the code and none of it has been tried on the
-headset yet.
+shape. Those were fixed in the code. The third time (2026-10-05) the camera now
+stayed locked to the player whichever way the character faces, which is good and
+stays as it is. It also turned up four things: the laser dot was clipped to a half
+circle with a dither where it met the menu, the tooltips were too large and too
+central, the HUD in general seemed wrongly sized (the minimap was fine), and the
+display wasn't at the Frame's native 120 Hz and about 2160 pixels an eye.
+Everything from the third wear is host build, headset-unverified: it builds and
+the bindings test passes, and none of it has been tried on the headset yet.
 [VR_ARCHITECTURE.md](VR_ARCHITECTURE.md) has the details and an honest status
 table, and [PORT_PLAN.md](PORT_PLAN.md) has the reasoning.
 
@@ -148,7 +154,7 @@ alone. Every action has a button of its own, so nothing doubles up:
 | Left bumper | Look left (and lean out to the left with an Uzi) |
 | Right bumper | Look right (same on the right) |
 | Both bumpers | Look behind |
-| Grips, right stick click | Nothing |
+| Grips, right stick click | Nothing. The grips are never the handbrake here (that is A); a test keeps it that way |
 
 The car camera mode is not on a button here (the game's own button for it is
 Select, which this build never sends).
@@ -173,6 +179,11 @@ is down). If the ray misses everything the beam still shows, 1.5 m long and
 without a dot, so you can find the screen. In play and in cutscenes there is
 nothing to point at and no pointer.
 
+- **Dot on the surface.** The dot lies flat on the menu or screen it hit, 12 mm in
+  front of it, and the beam stops about 2 cm short along the ray. SteamVR
+  depth-composites quads that cross, so a dot centred on the surface was half
+  behind it and clipped to a half circle with a dither (third wear). Host build,
+  not worn.
 - **Always on top.** The beam and dot are two small alpha-blended quad layers
   submitted last, after the screen and the VR menu panel, so SteamVR draws them
   over everything. Layer order each frame: world or the theater screen, the VR
@@ -264,11 +275,12 @@ The ones you are likely to want:
 | `MovementOrientation` | 1 | 0 body, 1 head, 2 head turn (experimental) |
 | `ThirdPersonMovement` | 0 | 0 face move (Claude turns to walk), 1 face camera (strafe). Third person only |
 | `DrawDistancePercent` | 250 | 100 to 300 in steps of 25, percent of the flat game's draw distance. GRAPHICS page |
-| `HudDistanceCm` | 300 | 150 to 400, how far out the HUD sits. It keeps the same size to the eye. HUD page, with HUD SCALE (`HudScalePercent`, 130) |
+| `HudDistanceCm` | 300 | 150 to 400, how far out the HUD sits. It keeps the same size to the eye. HUD page, with HUD SCALE (`HudScalePercent`, 100; it was 130) |
 | `TurnMode` | 0 | 0 smooth, 1 snap |
 | `VehicleFollowRotation` | 0 | 1 makes the first-person car view follow the car's tilt |
 | `HeadAim` | 1 | 0 turns off aiming and scopes by head. No menu row |
-| `RefreshRate` | 72 | 72, 80, 90 or 120 |
+| `RefreshRate` | 120 | 72, 90 or 120. The rate the game asks for; see "Display" below. LOCOMOTION page |
+| `RenderScalePercent` | 0 | 0 is automatic (whatever makes the eye image about 2160 wide), or 75 to 150. GRAPHICS page, needs a restart |
 
 VR_ARCHITECTURE.md lists the rest.
 
@@ -276,6 +288,44 @@ Head aim and the head-driven scopes only work with MOVEMENT DIRECTION set to
 HEAD or HEAD TURN. With BODY the view is welded to the body, so turning the
 body would turn the world. Leave the game's own control method on Standard (the
 default); the Classic one hasn't been looked at.
+
+### Display
+
+Host build, not worn. The standard for the Frame is 120 Hz at about 2160 x 2160
+an eye, the panel's own size.
+
+- **Refresh rate.** `RefreshRate` defaults to 120. When the session is focused the
+  game lists the rates `XR_FB_display_refresh_rate` offers and asks for the
+  highest one that is not above the setting. The log says what happened:
+  `[vr] refresh: setting 120, offered {90, 120}, requested 120`. It never holds
+  the picture back waiting for the display to settle, and it never asks for a
+  lower rate than the compositor already runs at (SteamVR can list less than it
+  runs) unless you changed the setting yourself. While you are wearing it, two
+  [vr-perf] windows in a row (10 s each) under 90% of the current rate step down
+  120, then 90, then 72, with `[vr] refresh fallback: ...` in the log. The
+  fallback lasts for that session; the setting is untouched, and picking a rate
+  again clears it. The LOCOMOTION row shows what SteamVR is really running at.
+- **Your one-time step.** SteamVR only offers the rate set for this title in its
+  own per-app settings, so the game can't make the Frame go to 120 on its own. In
+  the headset, open SteamVR's settings for GTA III and set 120 Hz (and the
+  resolution to 2160). This is part of the wear checklist: set it once, and check
+  the log says `compositor 120` after `[vr] refresh:`.
+- **Resolution.** The default is automatic: 2160 divided by the width the runtime
+  recommends. With the runtime's own 1728 that is 125%; with SteamVR's per-app
+  resolution already at 2160 it is 100%, so nothing renders at ~2700. Picking
+  AUTO, 75, 100, 125 or 150 on the GRAPHICS page overrides it (it needs a
+  restart). The log says `[vr] render scale: recommended 1728x1728, automatic ...
+  125% ..., eye image 2160x2160`. The eye images are created at that size and the
+  game renders straight into them, so there is no render-big-then-shrink step.
+
+### HUD sizes
+
+The HUD plane is sized from the eye's view window, so moving it from 2 m to 3 m
+kept its angular size. What it kept was the 130% scale, which spread the
+interface across about 63 degrees and put the clock, money and health 30 degrees
+up and out. HUD SCALE now defaults to 100%, about 50 degrees across, and the help
+box sits upper left at 0.65 times its old angular size. VR_ARCHITECTURE.md has the
+numbers per element.
 
 ## 4. Testing with nobody wearing it
 
@@ -347,4 +397,6 @@ Short version. The full table is in VR_ARCHITECTURE.md.
 | Nothing rolls with the head: HUD, crosshair, sights, coronas, flares and particles stay upright; the VR menu is world-locked and yaw-only (`[vr] roll-free billboards/HUD` in the log) | host build, not worn. Check by tilting the head |
 | Reading the game from the Steam install in place, falling back to the copy in Documents | Frame, nobody wearing it, on the fallback: logs `Documents copy ... (no Steam install of app 12100 found)` and plays into the game. The Steam path has a host test only, because GTA III isn't installed in Steam on the Frame right now |
 | Menu laser pointer: beam and dot as the last layers, frontend driven through the mouse path, VR menu rows hover and click | Frame, nobody wearing it (2026-10-05): with the ray parked by `diag_pointer`, the title menu row and the VR menu row under the dot highlight, and `vr-pointer.bmp` shows beam and dot over the screen and the panel. Clicking with a real controller is not worn yet |
+| The camera stays locked to the player whichever way the character faces (third wear, 2026-10-05) | worn, good |
+| Laser dot lies on the surface, beam stops short; tooltips 0.65x and to the left; HUD SCALE 100%; refresh request 120 with the 90/72 fallback; automatic ~2160 eye size; grips never the handbrake | host build, headset-unverified until worn (third wear findings, 2026-10-05) |
 | Menus, boats, audio, comfort, performance with traffic | not tried |

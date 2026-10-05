@@ -148,7 +148,7 @@ and builds, but nothing has exercised it.
 | Culling | Per-view culling (`IsEntityOutsideCurrentView`, `ShouldRenderInCurrentView`), omnidirectional `ScanWorld`, bounds-checked entity lists. re3 has no occlusion system, so none of that is carried. `VR_CULLING_OFF` exists but nothing sets it | done |
 | Player body | Hidden on foot in first person (`gVrHidePlayerBody`); shown in both third-person views, in cars, and in scripted scenes | done on foot; the rest carried |
 | Driver head in first person | `CPed::PreRender` collapses the occupant's head while the eye sits inside it | carried (T7) |
-| HUD (Im2D) | Projected per eye onto a plane inside the multiview pass, `HudDistanceCm` out (the plane is sized from it, so the angular size does not change); safe-area transform; always drawn. `SetVrHudLayout` in `main.cpp` sets it for both 2D passes (before and after the fade) from the mode the frame was prepared with | done for the plane; the distance and the after-fade pass are host build, not worn |
+| HUD (Im2D) | Projected per eye onto a plane inside the multiview pass, `HudDistanceCm` out (the plane is sized from it, so the angular size does not change); safe-area transform; always drawn. `SetVrHudLayout` in `main.cpp` sets it for both 2D passes (before and after the fade) from the mode the frame was prepared with | done for the plane; the distance, the after-fade pass and the 100% default scale are host build, not worn (see "HUD sizes") |
 | Roll-free HUD and billboards | Standard section 3 and 4: nothing rolls with the head. The HUD plane (`im2dWorld`) is built from the head's yaw and pitch only (`rollFreeOrientation` in `xr_vulkan_session.cpp`, so the crosshair and sniper and rocket sights stay upright; their centre is still the head's forward). World sprites (coronas, flares, the aim marker, particles: vertices carrying a real camera depth) take a second plane, `im2dSpriteWorld`, the full head frame the game projected them through, so they land on their source in both eyes (`rw::vulkan::setIm2DSpriteTransform`, `scene.im2dSpriteTransform`, picked per vertex in `rw_im2d.vert`). The sprite emitters in `Sprite.cpp` counter-rotate their four corners about the centre by the head roll, computed once per frame in `CSprite::UpdateVrRoll` (angle between the screen image of the camera's up and of world up, through the same projection `CalcScreenCoors` uses). Clipping is skipped while rolled. Held at the last value when looking within about 6 degrees of straight up or down. Off in theater mode. The startup log has `[vr] roll-free billboards/HUD` | host build, not worn |
 | Radar | Vice City's 24-gon tile clipping in place of the depth mask, which fails under Adreno multiview. The tiles carry the map in their alpha channel (the device log shows one RGB colour per tile, 8888, stream alpha flag set), so they have to be blended: RenderWare blends any raster that carries alpha even with vertex alpha off, but librw's Vulkan Im2D path blends on vertex alpha alone, so they were drawn opaque and flat. `DrawRadarMap` turns vertex alpha on for the tiles. Each tile logs a `[radar]` line when it streams in | device, unattended (2026-10-04): the minimap shows the road layout, the land in orange and the roads see-through; the `[radar]` lines confirm 32-bit 128x128 tiles with one colour and the map in alpha. Not yet worn |
 | Coronas | Compact, no streaks, reflection `recipz`, headlight/streak types folded to normal | done |
@@ -223,7 +223,7 @@ lands on its own button:
 | Left bumper | Look left (Uzi: lean out left) | L2 |
 | Right bumper | Look right | R2 |
 | Both bumpers | Look behind | L2 and R2 |
-| Grips, right stick click | Unbound | none |
+| Grips, right stick click | Unbound | none. `check_bindings.py` fails if the driving layout ever reads a grip: Vice City's right grip doubled as a handbrake, and the user wants grips to stay action buttons |
 
 The camera-mode button is Select in CONFIG 1, which `CapturePad` never sends.
 CONFIG 2 puts it on D-pad up and down, so those two are cleared in a vehicle.
@@ -256,7 +256,15 @@ menus"); this is how it is wired.
   (dot idle, dot pressed, beam strip) into its own small swapchain and returns a
   beam quad and a dot quad, with straight-alpha blending, which go out as the
   last two layers. The beam runs from the aim pose to the hit (1.5 m on a miss);
-  both are turned to face the head about world up. The result (`pointerFrontend`,
+  the beam is turned to face the head about its own axis. `updatePointer` also
+  keeps the orientation of the surface it hit (`ptrHitOrientation`). The dot takes
+  that orientation, so it lies on the panel or screen, and sits 12 mm out along
+  the surface normal (turned to face the head); the beam ends
+  `0.02 / max(|dot(dir, n)|, 0.25)` m short of the hit, never leaving less than
+  3 cm. Both used to cross the surface, and SteamVR depth-composites quads that
+  intersect, which clipped the dot to a half circle and made the crossing
+  z-fight (third wear). The dump's flat composite uses the submitted poses, so it
+  is unchanged. Host build, not worn. The result (`pointerFrontend`,
   `frontendU/V`, `pointerMenu`, `menuU/V`, `pointerPressed`) is in
   `ControllerInput` and reaches the game one frame late, because the game reads
   its input before the layers it is tested against exist.
@@ -280,6 +288,92 @@ menus"); this is how it is wired.
 - **Diagnostics.** `diag_pointer`, `diag_pointer_u`, `diag_pointer_v`,
   `diag_vr_menu` in `vr-diag.ini`; `dump_frame` also writes `vr-pointer.bmp`
   (section 8).
+
+### HUD sizes (third wear, host calculation)
+
+Everything the game draws in 2D, the radar included, goes through one transform
+(`SetVrHudLayout`): layout for a square plane (aspect 1.0, so one unit is 1/480 of
+the plane in both directions), then the safe area scales it about the plane's
+centre by `0.58 * HudScalePercent / 130`. The plane is `2 * d * viewWindow` wide,
+so the distance cancels: a unit is the same angle at 2 m, 3 m or 4 m. The
+distance move therefore kept the size, and nothing else got out of step with the
+radar: text, icons and the radar share one scale and keep the original game's
+proportions. What was wrong was the size itself.
+
+With the Frame's left eye FOV (about 109.6 degrees) the view window is about 1.063
+(tan of 46.8 degrees). Angles below are at the centre of the plane, small-angle:
+
+| | 130% (0.58), was | 100% (0.446), now |
+| --- | --- | --- |
+| Degrees per game unit | 0.147 | 0.113 |
+| Whole safe area, half width | +-31.7 | +-25.4 |
+| Radar (82 units) | 12.1 | 9.3 |
+| Weapon icon (64) | 9.4 | 7.2 |
+| Money, health, clock, timer text, cell height (27) | 4.0 | 3.1 |
+| Money, 8 digits wide (152) | 22.4 | 17.2 |
+| Wanted stars, six wide (138) | 20.3 | 15.6 |
+| Subtitles, cell height (22) | 3.3 | 2.5 |
+| Big message, cell height (36) | 5.3 | 4.1 |
+| Help box, old 1.35x, width / cell height | 39 / 4.4 | |
+| Help box, new 1.14x, width / cell height | | 25 / 2.8 |
+| Clock, top right: right / up from straight ahead | 18 to 31 / 29 | 14 to 25 / 23 |
+| Radar centre: left / down | 22 / 21 | 17 / 17 |
+
+The standard asks for body text of at least 0.6 degrees (0.35 as a floor), so the
+text is several times over that at both scales; the problem was reach and bulk.
+The whole interface was about 63 degrees wide against the standard's 40 for a
+near HUD, with the clock and money 30 degrees up. Default HUD SCALE is now 100%
+(about 50 degrees; the standard's 100% default as well). The radar is smaller as a
+result (12 to 9 degrees); the user said it was fine, so if it now reads too small,
+HUD SCALE is the knob. The help box is `1.14` times the stock text at the new
+scale, which is 0.65 times the old angular size (`1.35` at 130%), starts 20 units
+from the left (about 23 degrees left of straight ahead) and sits 170 units above
+the middle, so a long tip grows down the left side. The numbers come from the code
+and the Frame's reported FOV, not from a measurement: `[vr] hud layout` in the log
+gives the buffer and plane distance. One thing not changed: a scope's zoom
+narrows the eye FOV, which narrows the view window, so the HUD plane shrinks in
+angle while the scope is up. The sniper and rocket overlays are laid out against
+that window, so it was left alone.
+
+### Display (third wear, host build, not worn)
+
+Standard section 9: 120 Hz, about 2160 x 2160 an eye.
+
+- **Refresh request (`requestFrameRefreshRate`).** Sent from `renderFrame` on the
+  first focused frame after `xrWaitFrame` (and again when the setting changes),
+  so the compositor's real rate, taken from `predictedDisplayPeriod`
+  (`measuredRefreshHz`), is known. It enumerates the offered rates, picks the
+  highest at or under the setting (or under the fallback's ceiling; the lowest
+  offered if none is), logs `[vr] refresh: setting N, offered {...}, requested R`
+  and calls `xrRequestDisplayRefreshRateFB`. A request below the compositor's
+  rate is skipped (with a log line saying so) unless the player or the fallback
+  asked for it. Frames are never held while the rate settles
+  (`refreshRateReadyForFrames` stays true), and the Quest-era retry pump is
+  compiled out. `third_party/sfvr`'s settings registry already has a
+  `refresh_rate` key (default 90, 72 to 144), but this port keeps its own
+  `RefreshRate` ini key as it always did, so it was not reused, and the vendored
+  copy is left as it is.
+- **Fallback (`refreshFallbackWindow`).** Called with each `[vr-perf]` line. A
+  window counts only if the session was FOCUSED for all of it. Two in a row below
+  90% of the current rate set a ceiling one step down, 120 to 90 to 72, request
+  it and ignore the window the change lands in. It is for the session only; a
+  new setting clears it.
+- **Per-app rate.** SteamVR keeps a preferred rate per Steam title, the extension
+  offers only that, and the game can't raise it. You set 120 Hz (and resolution
+  2160) for GTA III in SteamVR's per-app settings in the headset once; see
+  `references/platform.md` "Per-app refresh". It belongs on the wear checklist.
+- **Resolution.** The swapchain is created at `recommended * scale`, and the scene
+  and depth targets in librw are the same size (`backendParams.sceneWidth` is the
+  swapchain width, clamped to it), so the game renders straight into the image
+  the compositor reads. There is no render-larger-then-blit path; the only blit
+  in the tree is the reduced-size scene reflection map. The default scale is
+  automatic: `2160 / recommendedWidth`, rounded, clamped to 75 to 150%
+  (1728 gives 125%; with per-app resolution at 2160 it gives 100%). A scale picked
+  in the menu replaces it (`RenderScalePercent` 75 to 150; 0 is automatic). The
+  log has `[vr] render scale: recommended WxH, automatic for 2160 wide: S%
+  (selected ...), eye image WxH`. The GRAPHICS row shows the setting and the real
+  eye size; the LOCOMOTION refresh row shows the setting and what the compositor
+  runs at, and a fallback.
 
 ## 6. Views and gameplay modes
 
@@ -376,12 +470,13 @@ All are in the `[VR]` section of `gamedata/vr_settings.ini`. `deploy.sh
 | `HeadSteeringSensitivityPercent` | 50 | 25 to 300, for head turn |
 | `SnapTurnAngleDegrees` | 30 | 15 to 90 |
 | `HeadBobbing` | 0 | Walking head bob in first person |
-| `RefreshRate` | 72 | 72, 80, 90, 120 |
+| `RefreshRate` | 120 | 72, 90, 120 (Frame). The setting the request and the fallback start from |
 | `StickLookBehind` | 0 | R3 looks behind on foot in first person |
 | `Bind*` | | Pad bindings from the CONTROLS page (`BindA`, `BindB`, ..., `BindRightStickClick`) |
-| `HudWidthPercent`, `HudScalePercent`, `HudOffsetXCm`, `HudOffsetYCm` | 100, 130, 0, 0 | HUD plane (HUD SCALE is `HudScalePercent`) |
+| `HudWidthPercent`, `HudScalePercent`, `HudOffsetXCm`, `HudOffsetYCm` | 100, 100, 0, 0 | HUD plane (HUD SCALE is `HudScalePercent`; the default was 130 until the third wear) |
 | `GameplayHud`, `HudWeaponPanel`, `HudClock` | 1 | Read, but nothing in the engine acts on them yet; the HUD is always drawn |
-| `AntiAliasing`, `GenerateMipmaps`, `Ps2AlphaTest`, `FoliageSoftness`, `DistanceFog`, `RenderScalePercent`, `MsaaSamples` | | Graphics page |
+| `AntiAliasing`, `GenerateMipmaps`, `Ps2AlphaTest`, `FoliageSoftness`, `DistanceFog`, `MsaaSamples` | | Graphics page |
+| `RenderScalePercent` | 0 | Frame: 0 is automatic (about 2160 wide), else 75 to 150. `FrameDisplayProfileVersion` 1 resets the old Quest 100 to 0 once |
 
 `StickCrouch` is still read but has no use: GTA III has no crouch.
 
@@ -432,6 +527,8 @@ driven by `vr-diag.ini`), **not worn** (nobody has played it).
 | `VehicleFollowRotation` and its CAR VIEW row | host build, not worn |
 | Audio backend comes up (AAudio mixer, 48 kHz); the stereo IMA ADPCM streams (radio, cutscenes) decode bit-exact against macOS `afconvert` | device, unattended; host test |
 | Game data from the Steam install in place, Documents copy as the fallback (section 1a): library discovery, read order, writes in Documents | host build and host test. Not device-verified: the fallback is what runs today, GTA III is not installed in Steam on the Frame |
+| Third wear (2026-10-05): the camera stays locked to the player whichever way the character faces | worn, good |
+| Third wear fixes: dot on the surface and beam short of it, tooltips 0.65x upper left, HUD SCALE 100%, 120 Hz request with 90/72 fallback, automatic ~2160 eye size, grips unbound in vehicles (check added) | host build, headset-unverified until worn |
 | Menu laser pointer (beam and dot as last layers, frontend through the mouse path, VR menu rows) | Frame, nobody wearing it: title menu and VR menu dumps, row under the dot highlights, pointer on top. Not worn |
 | Menus, loading screens, boats, RC vehicles, pause, hearing the audio | not worn |
 | Driving (first wear: it drove, with the problems above) | worn once |
