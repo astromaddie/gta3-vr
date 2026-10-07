@@ -409,3 +409,44 @@ Short version. The full table is in VR_ARCHITECTURE.md.
 | The camera stays locked to the player whichever way the character faces (third wear, 2026-10-05) | worn, good |
 | Laser dot lies on the surface, beam stops short; tooltips 0.65x and to the left; HUD SCALE 100%; refresh requested once (120 setting), with a log note if the rate isn't held; automatic ~2160 eye size; grips never the handbrake | host build, headset-unverified until worn (third wear findings, 2026-10-05) |
 | Menus, boats, audio, comfort, performance with traffic | not tried |
+
+## Camera migration delivery (2026-10-07)
+
+Source `76ef7ef4d864eb1b90709fdbe3109cb761cd03a3` passed focused production camera-transform/modifier checks,
+the native ARM64 build, package/dependency checks and Android v2 signature verification.
+
+The shared camera adapter provides snap/smooth/off choices, signed native-collision
+camera offsets, apparent world size, height, seated calibration, head movement,
+the live frozen-gameplay settings preview and right/left/centre panel placement.
+Physical left grip plus physical right stick adjusts size horizontally and
+farther/higher or nearer/lower vertically, before turn/game readers; release or
+focus loss requires a neutral stick. Occupied first-person grips and custom
+bindings retain their game action. Fresh defaults are snap 30, with a persistent
+personal smooth-120/third-person profile; explicit saved choices are preserved.
+Third-person pickup is on D-pad Up, freeing left grip. First-person pickup and
+existing vehicle controls remain available.
+
+Installed `~/devkit-game/GTA3VR/GTA3-VR.apk` SHA-256:
+`d88aed61790fad140c324e10e9daf8b1cd1f17656bd85cab90a9e5b18cd92e5d`. The booked, idle Steam-title launch (raw app ID 4009111892) booted the
+frontend through SteamVR/OpenXR, accepted Frame/Index/Touch profile suggestions
+(26/18/19 bindings), and reached READY/SYNCHRONIZED. Only the task's own Lepton
+process was stopped. No new gameplay-preview capture or physical input test was
+performed in this smoke check.
+
+The smoke boot changed `gamedata/vr_settings.ini`, a missed backup sidecar.
+Its before-hash was retained. Reversing the known display-profile writes yielded
+the exact original 409 bytes, SHA-256
+`0035f7110184563f1fbdf7b60c73169e1321d9cae3b94bb927a116ddd99ff946`.
+Those verified bytes were atomically restored with original mode 666; the changed
+post-run copy was retained separately. This is exact hash-verified recovery,
+not a claim that the sidecar was backed up correctly before launch.
+
+| Current increment | Evidence level |
+| --- | --- |
+| ARM64 package, Steam-title frontend boot and accepted profile suggestions | verified unattended |
+| New live camera preview, physical modifier/remaps, tracked recentring and comfort | not worn; preview not captured |
+
+Wear checks: grip plus all four right-stick directions; neutral release;
+pause/settings/resume; right-side panel and pointer; recentre; on-foot pickup;
+first-person actions and vehicle entry/driving/exit. Evidence: task output
+`device-camera-migration/GTA3VR/lepton-steamlaunch.log` and the cross-port report.
