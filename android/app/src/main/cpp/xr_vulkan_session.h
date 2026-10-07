@@ -64,6 +64,11 @@ int getActivePerformanceMode(void);
 
 // True once the session reached a state in which frames must be submitted.
 bool shouldRender(void);
+#if MIAMIVR_STEAM_FRAME
+// The session window may keep running without focus; adjustment input uses
+// this to reset its elapsed time and require a neutral stick on return.
+bool isSessionFocused(void);
+#endif
 
 // True only inside the current immersive game frame with a focused session
 // and freshly tracked position AND orientation. Rendering may deliberately
@@ -249,7 +254,8 @@ long long getPredictedDisplayTimeNs(void);
 
 // RGBA pixels for the head-locked UI overlay quad, or nullptr to hide it.
 // Compact diagnostics/settings use 512x128; full menus use 1024x768.
-void setDebugOverlay(const unsigned char *rgba, int width, int height);
+void setDebugOverlay(const unsigned char *rgba, int width, int height,
+	int settingsPageSide = 0);
 
 // Meta runtime app timings. When XR_META_performance_metrics is exposed these
 // are the runtime's own CPU/GPU frame times, sampled after xrEndFrame. The

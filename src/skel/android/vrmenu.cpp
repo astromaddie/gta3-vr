@@ -10,6 +10,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
+#include <math.h>
 
 #include "android.h"
 #include "platform_android.h"
@@ -121,6 +122,9 @@ androidgame::VrRecenterView(void)
 	rw::vulkan::setFirstPersonAnchor(nil, 0.0f, 0, 0);
 }
 static bool gVrMenuVisible;
+#if MIAMIVR_STEAM_FRAME
+static bool gVrMenuOwnsPause;
+#endif
 static bool gVrMenuShortcutDown;
 static bool gVrMenuSelectDown;
 static bool gVrMenuBackDown;
@@ -199,7 +203,7 @@ enum
 	VR_VIEW_THIRD_SHOULDER = 2,
 };
 static int gViewMode;
-static int gThirdPersonStyle = VR_VIEW_THIRD_SCREEN;
+static int gThirdPersonStyle = VR_VIEW_THIRD_SHOULDER;
 // Third person on foot: 0 Claude turns to face the direction he walks (classic
 // third person), 1 he stays facing where the camera looks and strafes.
 static int gThirdPersonMovement;
@@ -218,6 +222,14 @@ static bool gQuestQuickTestStart;
 #endif
 #if MIAMIVR_STEAM_FRAME
 static int gQuestRenderScalePercent = 0;   // 0: automatic, about 2160 wide
+static float gWorldScale = 1.0f;            // game units per metre
+static int gCameraCloserCenti;
+static int gCameraLowerCenti;
+static int gHeightOffsetCm;
+static int gHeadTranslationPercent = 100;
+static int gSeatedTracking;
+static int gDefaultsProfile;
+static int gSettingsPageSide;
 #else
 static int gQuestRenderScalePercent = 100;
 #endif
@@ -267,16 +279,39 @@ static const int kVrPadBindingDefault[androidgame::VR_PAD_SOURCE_COUNT] = {
 	androidgame::VR_PAD_TARGET_TRIANGLE,  // Y
 	androidgame::VR_PAD_TARGET_SQUARE,    // left trigger
 	androidgame::VR_PAD_TARGET_CROSS,     // right trigger
+#if MIAMIVR_STEAM_FRAME
+	androidgame::VR_PAD_TARGET_NONE,      // left grip
+	androidgame::VR_PAD_TARGET_NONE,      // right grip
+#else
 	androidgame::VR_PAD_TARGET_L1,        // left grip
 	androidgame::VR_PAD_TARGET_R1,        // right grip
+#endif
 	androidgame::VR_PAD_TARGET_L3,        // left stick click
 	androidgame::VR_PAD_TARGET_R3         // right stick click
+#if MIAMIVR_STEAM_FRAME
+	,androidgame::VR_PAD_TARGET_L1         // D-pad up: pickup / action
+#endif
+};
+static const int kVrPadBindingLegacyDefault[10] = {
+	androidgame::VR_PAD_TARGET_CROSS,
+	androidgame::VR_PAD_TARGET_CIRCLE,
+	androidgame::VR_PAD_TARGET_SQUARE,
+	androidgame::VR_PAD_TARGET_TRIANGLE,
+	androidgame::VR_PAD_TARGET_SQUARE,
+	androidgame::VR_PAD_TARGET_CROSS,
+	androidgame::VR_PAD_TARGET_L1,
+	androidgame::VR_PAD_TARGET_R1,
+	androidgame::VR_PAD_TARGET_L3,
+	androidgame::VR_PAD_TARGET_R3
 };
 static const char *const kVrPadBindingKey[androidgame::VR_PAD_SOURCE_COUNT] = {
 	"BindA", "BindB", "BindX", "BindY",
 	"BindLeftTrigger", "BindRightTrigger",
 	"BindLeftGrip", "BindRightGrip",
 	"BindLeftStickClick", "BindRightStickClick"
+#if MIAMIVR_STEAM_FRAME
+	,"BindDpadUp"
+#endif
 };
 static int gVrPadBinding[androidgame::VR_PAD_SOURCE_COUNT];
 static int gVrMenuPage;
@@ -285,6 +320,9 @@ static int gVrGraphicsSelection;
 static int gVrHudSelection;
 static int gVrLocomotionSelection;
 static int gVrControlsSelection;
+#if MIAMIVR_STEAM_FRAME
+static int gVrCameraScaleSelection;
+#endif
 static bool gVrWelcomePending;
 static bool gVrWelcomeFirstRun;
 static bool gVrAboutDismissArmed;
@@ -295,12 +333,36 @@ static int gQuestCpuPerformanceMode;
 static int gQuestCpuPerformanceSavedMode;
 static int gQuestGpuPerformanceMode = 1; // SUSTAINED; enum is declared below.
 
+static void
+SetVrMenuVisible(bool visible)
+{
+	if(gVrMenuVisible == visible)
+		return;
+#if MIAMIVR_STEAM_FRAME
+	if(visible){
+		if(gGameState == GS_PLAYING_GAME &&
+		   !FrontEndMenuManager.m_bGameNotLoaded &&
+		   !CTimer::GetIsPaused()){
+			CTimer::SetCodePause(true);
+			gVrMenuOwnsPause = true;
+		}
+	}else if(gVrMenuOwnsPause){
+		CTimer::SetCodePause(false);
+		gVrMenuOwnsPause = false;
+	}
+#endif
+	gVrMenuVisible = visible;
+}
+
 enum {
 	VR_MENU_PAGE_SETTINGS,
 	VR_MENU_PAGE_GRAPHICS,
 	VR_MENU_PAGE_HUD,
 	VR_MENU_PAGE_LOCOMOTION,
 	VR_MENU_PAGE_CONTROLS,
+#if MIAMIVR_STEAM_FRAME
+	VR_MENU_PAGE_CAMERA_SCALE,
+#endif
 	VR_MENU_PAGE_ABOUT,
 };
 
@@ -317,12 +379,31 @@ enum eVrHudMenuItem {
 	VR_HUD_ITEM_COUNT
 };
 
+#if MIAMIVR_STEAM_FRAME
+enum eVrCameraScaleMenuItem {
+	VR_CAMERA_PROFILE = 0,
+	VR_CAMERA_APPLY_DEFAULTS,
+	VR_CAMERA_WORLD_SIZE,
+	VR_CAMERA_CLOSER,
+	VR_CAMERA_LOWER,
+	VR_CAMERA_HEIGHT_OFFSET,
+	VR_CAMERA_SEATED,
+	VR_CAMERA_HEAD_TRANSLATION,
+	VR_CAMERA_PAGE_SIDE,
+	VR_CAMERA_BACK,
+	VR_CAMERA_ITEM_COUNT
+};
+#endif
+
 // Only settings backed by the Vulkan/OpenXR runtime and the game as it is.
 enum eVrMainMenuItem {
 	VR_MAIN_GRAPHICS = 0,
 	VR_MAIN_HUD,
 	VR_MAIN_LOCOMOTION_SETTINGS,
 	VR_MAIN_CONTROLS,
+#if MIAMIVR_STEAM_FRAME
+	VR_MAIN_CAMERA_SCALE,
+#endif
 	VR_MAIN_ABOUT,
 	VR_MAIN_ITEM_COUNT
 };
@@ -385,6 +466,9 @@ enum eVrControlsMenuItem {
 	VR_CONTROLS_B,
 	VR_CONTROLS_X,
 	VR_CONTROLS_Y,
+#if MIAMIVR_STEAM_FRAME
+	VR_CONTROLS_DPAD_UP,
+#endif
 	VR_CONTROLS_LEFT_GRIP,
 	VR_CONTROLS_RIGHT_GRIP,
 	VR_CONTROLS_LEFT_STICK_CLICK,
@@ -531,14 +615,18 @@ LoadVrSettings(void)
 	gFoliageSoftness = Clamp((int)(int32)GetPrivateProfileIntA("VR",
 		"FoliageSoftness", 0, ".\\vr_settings.ini"), 0, 3);
 #if MIAMIVR_STEAM_FRAME
+	char profile[32];
+	GetPrivateProfileStringA("VR", "DefaultsProfile", "standard",
+		profile, sizeof(profile), ".\\vr_settings.ini");
+	gDefaultsProfile = strcmp(profile, "frame_personal") == 0 ? 1 : 0;
 	gCutsceneMode = Clamp((int)(int32)GetPrivateProfileIntA("VR",
 		"CutsceneMode", VR_CUTSCENE_CINEMA_3D, ".\\vr_settings.ini"),
 		VR_CUTSCENE_CINEMA, VR_CUTSCENE_CINEMA_3D_DEEP);
 	gViewMode = Clamp((int)(int32)GetPrivateProfileIntA("VR",
-		"ViewMode", VR_VIEW_THIRD_SCREEN, ".\\vr_settings.ini"),
+		"ViewMode", VR_VIEW_THIRD_SHOULDER, ".\\vr_settings.ini"),
 		VR_VIEW_FIRST_PERSON, VR_VIEW_THIRD_SHOULDER);
 	gThirdPersonStyle = Clamp((int)(int32)GetPrivateProfileIntA("VR",
-		"ThirdPersonStyle", VR_VIEW_THIRD_SCREEN, ".\\vr_settings.ini"),
+		"ThirdPersonStyle", VR_VIEW_THIRD_SHOULDER, ".\\vr_settings.ini"),
 		VR_VIEW_THIRD_SCREEN, VR_VIEW_THIRD_SHOULDER);
 	gThirdPersonMovement = GetPrivateProfileIntA("VR",
 		"ThirdPersonMovement", 0, ".\\vr_settings.ini") != 0 ? 1 : 0;
@@ -636,11 +724,18 @@ LoadVrSettings(void)
 		".\\vr_settings.ini"), (int)QUEST_CPU_PERFORMANCE_AUTO),
 		(int)QUEST_CPU_PERFORMANCE_BOOST);
 	xrvk::setGpuPerformanceMode(gQuestGpuPerformanceMode);
+	#if MIAMIVR_STEAM_FRAME
+	const int defaultTurnMode = gDefaultsProfile ?
+		QUEST_TURN_SMOOTH : QUEST_TURN_SNAP;
+	#else
+	const int defaultTurnMode = QUEST_TURN_SMOOTH;
+	#endif
 	gQuestTurnMode = Min(Max(GetPrivateProfileIntA("VR", "TurnMode",
-		QUEST_TURN_SMOOTH, ".\\vr_settings.ini"),
+		defaultTurnMode, ".\\vr_settings.ini"),
 		(int)QUEST_TURN_SMOOTH), (int)QUEST_TURN_MODE_COUNT-1);
 	gQuestTurnSensitivityPercent = Min(Max(GetPrivateProfileIntA("VR",
-		"TurnSensitivityPercent", 100, ".\\vr_settings.ini"), 25), 300);
+		"TurnSensitivityPercent", gDefaultsProfile ? 120 : 100,
+		".\\vr_settings.ini"), 25), 300);
 	gQuestHeadSteeringSensitivityPercent = Min(Max(
 		GetPrivateProfileIntA("VR", "HeadSteeringSensitivityPercent",
 			50, ".\\vr_settings.ini"), 25), 300);
@@ -653,16 +748,65 @@ LoadVrSettings(void)
 	gVrWelcomePending = GetPrivateProfileIntA("VR", "WelcomeShown", 0,
 		".\\vr_settings.ini") == 0;
 	gVrWelcomeFirstRun = gVrWelcomePending;
-	// A binding out of range is an INI written by a different build; fall back
-	// to the shipped assignment for that input rather than to no button at all.
-	for(int source = 0; source < VR_PAD_SOURCE_COUNT; source++){
-		const int target = GetPrivateProfileIntA("VR",
-			kVrPadBindingKey[source], kVrPadBindingDefault[source],
-			".\\vr_settings.ini");
-		gVrPadBinding[source] =
-			target >= VR_PAD_TARGET_NONE && target < VR_PAD_TARGET_COUNT ?
-				target : kVrPadBindingDefault[source];
+	// Migrate only an untouched old default. Any customised action remains
+	// exactly as saved; new inputs then stay unassigned for that profile.
+	{
+		const int32 missing = -2147483647;
+		int persisted[VR_PAD_SOURCE_COUNT];
+		bool anySaved = false;
+		bool exactOldDefault = true;
+		for(int source = 0; source < VR_PAD_SOURCE_COUNT; source++){
+			persisted[source] = (int32)GetPrivateProfileIntA("VR",
+				kVrPadBindingKey[source], missing, ".\\vr_settings.ini");
+			if(persisted[source] == missing)
+				continue;
+			anySaved = true;
+			if(source >= 10 || persisted[source] !=
+			   kVrPadBindingLegacyDefault[source])
+				exactOldDefault = false;
+		}
+		const bool migrate = anySaved && exactOldDefault;
+		for(int source = 0; source < VR_PAD_SOURCE_COUNT; source++){
+			if(migrate || !anySaved){
+				gVrPadBinding[source] = kVrPadBindingDefault[source];
+				if(migrate)
+					SaveVrInteger(kVrPadBindingKey[source],
+						gVrPadBinding[source]);
+				continue;
+			}
+			const int fallback = source < 10 ?
+				kVrPadBindingLegacyDefault[source] :
+				androidgame::VR_PAD_TARGET_NONE;
+			const int target = persisted[source] == missing ? fallback :
+				persisted[source];
+			gVrPadBinding[source] =
+				target >= VR_PAD_TARGET_NONE && target < VR_PAD_TARGET_COUNT ?
+					target : fallback;
+		}
 	}
+#if MIAMIVR_STEAM_FRAME
+	char worldScaleText[32];
+	GetPrivateProfileStringA("VR", "WorldScale", "1.0", worldScaleText,
+		sizeof(worldScaleText), ".\\vr_settings.ini");
+	gWorldScale = strtof(worldScaleText, nil);
+	if(!isfinite(gWorldScale) || gWorldScale < 0.25f || gWorldScale > 4.0f)
+		gWorldScale = 1.0f;
+	gCameraCloserCenti = Min(Max((int32)GetPrivateProfileIntA("VR",
+		"CameraCloserCenti", 0, ".\\vr_settings.ini"), -100), 80);
+	gCameraLowerCenti = Min(Max((int32)GetPrivateProfileIntA("VR",
+		"CameraLowerCenti", 0, ".\\vr_settings.ini"), -100), 100);
+	gHeightOffsetCm = Min(Max((int32)GetPrivateProfileIntA("VR",
+		"HeightOffsetCm", 0, ".\\vr_settings.ini"), -100), 100);
+	gSeatedTracking = GetPrivateProfileIntA("VR", "Seated", 0,
+		".\\vr_settings.ini") != 0;
+	gHeadTranslationPercent = Min(Max(GetPrivateProfileIntA("VR",
+		"HeadTranslationPercent", 100, ".\\vr_settings.ini"), 0), 200);
+	gSettingsPageSide = Min(Max(GetPrivateProfileIntA("VR",
+		"SettingsPageSide", 0, ".\\vr_settings.ini"), 0), 2);
+	rw::vulkan::setWorldScale(gWorldScale);
+	rw::vulkan::setTrackingComfort(gHeadTranslationPercent/100.0f,
+		gHeightOffsetCm/100.0f, gSeatedTracking);
+#endif
 	gVehicleFollowRotation = GetPrivateProfileIntA("VR",
 		"VehicleFollowRotation", 0, ".\\vr_settings.ini") != 0;
 	gHeadAim = GetPrivateProfileIntA("VR", "HeadAim", 1,
@@ -733,6 +877,16 @@ SaveVrInteger(const char *key, int value)
 
 #if MIAMIVR_STEAM_FRAME
 static void
+SaveVrFloat(const char *key, float value)
+{
+	char text[32];
+	snprintf(text, sizeof(text), "%.6f", value);
+	WritePrivateProfileStringA("VR", key, text, ".\\vr_settings.ini");
+}
+#endif
+
+#if MIAMIVR_STEAM_FRAME
+static void
 SetViewMode(int mode)
 {
 	mode = Clamp(mode, (int)VR_VIEW_FIRST_PERSON, (int)VR_VIEW_THIRD_SHOULDER);
@@ -752,6 +906,44 @@ SetViewMode(int mode)
 		mode == VR_VIEW_THIRD_SHOULDER ? "third person, over shoulder" :
 		"first person");
 }
+
+static void
+SaveDefaultsProfile(void)
+{
+	WritePrivateProfileStringA("VR", "DefaultsProfile",
+		gDefaultsProfile ? "frame_personal" : "standard",
+		".\\vr_settings.ini");
+}
+
+static void
+ApplyDefaultProfile(void)
+{
+	SetViewMode(VR_VIEW_THIRD_SHOULDER);
+	gQuestTurnMode = gDefaultsProfile ? QUEST_TURN_SMOOTH : QUEST_TURN_SNAP;
+	gQuestTurnSensitivityPercent = gDefaultsProfile ? 120 : 100;
+	gQuestSnapTurnAngleDegrees = 30;
+	gThirdPersonMovement = 0;
+	gWorldScale = 1.0f;
+	gCameraCloserCenti = 0;
+	gCameraLowerCenti = 0;
+	gHeightOffsetCm = 0;
+	gSeatedTracking = 0;
+	gHeadTranslationPercent = 100;
+	gSettingsPageSide = 0;
+	SaveVrInteger("TurnMode", gQuestTurnMode);
+	SaveVrInteger("TurnSensitivityPercent", gQuestTurnSensitivityPercent);
+	SaveVrInteger("SnapTurnAngleDegrees", gQuestSnapTurnAngleDegrees);
+	SaveVrInteger("ThirdPersonMovement", gThirdPersonMovement);
+	SaveVrFloat("WorldScale", gWorldScale);
+	SaveVrInteger("CameraCloserCenti", gCameraCloserCenti);
+	SaveVrInteger("CameraLowerCenti", gCameraLowerCenti);
+	SaveVrInteger("HeightOffsetCm", gHeightOffsetCm);
+	SaveVrInteger("Seated", gSeatedTracking);
+	SaveVrInteger("HeadTranslationPercent", gHeadTranslationPercent);
+	SaveVrInteger("SettingsPageSide", gSettingsPageSide);
+	rw::vulkan::setWorldScale(1.0f);
+	rw::vulkan::setTrackingComfort(1.0f, 0.0f, 0);
+}
 #endif
 
 static int
@@ -762,6 +954,9 @@ VrControlsRowSource(int item)
 	case VR_CONTROLS_B: return androidgame::VR_PAD_SOURCE_B;
 	case VR_CONTROLS_X: return androidgame::VR_PAD_SOURCE_X;
 	case VR_CONTROLS_Y: return androidgame::VR_PAD_SOURCE_Y;
+#if MIAMIVR_STEAM_FRAME
+	case VR_CONTROLS_DPAD_UP: return androidgame::VR_PAD_SOURCE_DPAD_UP;
+#endif
 	case VR_CONTROLS_LEFT_GRIP: return androidgame::VR_PAD_SOURCE_LEFT_GRIP;
 	case VR_CONTROLS_RIGHT_GRIP: return androidgame::VR_PAD_SOURCE_RIGHT_GRIP;
 	case VR_CONTROLS_LEFT_STICK_CLICK:
@@ -785,6 +980,9 @@ VrPadSourceName(int source)
 	case androidgame::VR_PAD_SOURCE_LEFT_STICK_CLICK: return "LEFT STICK CLICK";
 	case androidgame::VR_PAD_SOURCE_RIGHT_STICK_CLICK:
 		return "RIGHT STICK CLICK";
+#if MIAMIVR_STEAM_FRAME
+	case androidgame::VR_PAD_SOURCE_DPAD_UP: return "D-PAD UP";
+#endif
 	}
 	return "UNKNOWN";
 }
@@ -823,10 +1021,13 @@ static const int kVrSwappedHandsBinding[androidgame::VR_PAD_SOURCE_COUNT] = {
 	androidgame::VR_PAD_TARGET_CIRCLE,    // Y
 	androidgame::VR_PAD_TARGET_SQUARE,    // left trigger
 	androidgame::VR_PAD_TARGET_CROSS,     // right trigger
-	androidgame::VR_PAD_TARGET_L1,        // left grip
-	androidgame::VR_PAD_TARGET_R1,        // right grip
+	androidgame::VR_PAD_TARGET_NONE,      // left grip
+	androidgame::VR_PAD_TARGET_NONE,      // right grip
 	androidgame::VR_PAD_TARGET_L3,        // left stick click
 	androidgame::VR_PAD_TARGET_R3         // right stick click
+#if MIAMIVR_STEAM_FRAME
+	,androidgame::VR_PAD_TARGET_L1         // D-pad up action
+#endif
 };
 
 static bool
@@ -964,6 +1165,9 @@ CurrentMenuSelection(void)
 	case VR_MENU_PAGE_HUD: return &gVrHudSelection;
 	case VR_MENU_PAGE_LOCOMOTION: return &gVrLocomotionSelection;
 	case VR_MENU_PAGE_CONTROLS: return &gVrControlsSelection;
+#if MIAMIVR_STEAM_FRAME
+	case VR_MENU_PAGE_CAMERA_SCALE: return &gVrCameraScaleSelection;
+#endif
 	default: return &gVrMenuSelection;
 	}
 }
@@ -977,6 +1181,9 @@ CurrentMenuItemCount(void)
 	case VR_MENU_PAGE_HUD: return VR_HUD_ITEM_COUNT;
 	case VR_MENU_PAGE_LOCOMOTION: return VR_LOCOMOTION_ITEM_COUNT;
 	case VR_MENU_PAGE_CONTROLS: return VR_CONTROLS_ITEM_COUNT;
+#if MIAMIVR_STEAM_FRAME
+	case VR_MENU_PAGE_CAMERA_SCALE: return VR_CAMERA_ITEM_COUNT;
+#endif
 	default: return 1;
 	}
 }
@@ -999,6 +1206,11 @@ CurrentMenuValueRepeats(void)
 	if(gVrMenuPage == VR_MENU_PAGE_LOCOMOTION)
 		return gVrLocomotionSelection ==
 			VR_LOCOMOTION_TURN_SENSITIVITY;
+#if MIAMIVR_STEAM_FRAME
+	if(gVrMenuPage == VR_MENU_PAGE_CAMERA_SCALE)
+		return gVrCameraScaleSelection >= VR_CAMERA_WORLD_SIZE &&
+			gVrCameraScaleSelection <= VR_CAMERA_HEAD_TRANSLATION;
+#endif
 	return false;
 }
 
@@ -1006,7 +1218,7 @@ static void
 ReturnFromCurrentMenuPage(void)
 {
 	if(gVrMenuPage == VR_MENU_PAGE_SETTINGS){
-		gVrMenuVisible = false;
+		SetVrMenuVisible(false);
 		return;
 	}
 	gVrMenuPage = VR_MENU_PAGE_SETTINGS;
@@ -1063,7 +1275,7 @@ VrDebugUpdate(const PadInput &in)
 		const int diagPage = frame_diag::config().openVrMenu;
 		if(diagPage > 0 && !diagOpened && ++diagFrames >= 240){
 			diagOpened = true;
-			gVrMenuVisible = true;
+			SetVrMenuVisible(true);
 			gVrMenuPage = diagPage-1;
 			gVrMenuSelection = 0;
 			gVrWelcomePending = false;
@@ -1073,7 +1285,7 @@ VrDebugUpdate(const PadInput &in)
 #endif
 	if(gVrWelcomePending && DidPlayerTakeWelcomeStep(in)){
 		gVrWelcomePending = false;
-		gVrMenuVisible = true;
+		SetVrMenuVisible(true);
 		gVrMenuPage = VR_MENU_PAGE_ABOUT;
 		gVrWelcomeFirstRun = true;
 		gVrAboutDismissArmed = false;
@@ -1084,7 +1296,7 @@ VrDebugUpdate(const PadInput &in)
 		if(!button)
 			gVrAboutDismissArmed = true;
 		else if(gVrAboutDismissArmed){
-			gVrMenuVisible = false;
+			SetVrMenuVisible(false);
 			gVrMenuPage = VR_MENU_PAGE_SETTINGS;
 			gVrAboutDismissArmed = false;
 			gVrAboutReleaseGate = true;
@@ -1112,7 +1324,7 @@ VrDebugUpdate(const PadInput &in)
 	const bool menuShortcut =
 		(bothGrips && in.menu) || alternateMenuShortcut;
 	if(menuShortcut && !gVrMenuShortcutDown){
-		gVrMenuVisible = !gVrMenuVisible;
+		SetVrMenuVisible(!gVrMenuVisible);
 		gVrMenuPage = VR_MENU_PAGE_SETTINGS;
 		gVrMenuSelection = 0;
 		gVrMenuSelectDown = false;
@@ -1302,6 +1514,11 @@ VrDebugUpdate(const PadInput &in)
 			}else if(gVrMenuSelection == VR_MAIN_CONTROLS){
 				gVrMenuPage = VR_MENU_PAGE_CONTROLS;
 				gVrControlsSelection = 0;
+#if MIAMIVR_STEAM_FRAME
+			}else if(gVrMenuSelection == VR_MAIN_CAMERA_SCALE){
+				gVrMenuPage = VR_MENU_PAGE_CAMERA_SCALE;
+				gVrCameraScaleSelection = 0;
+#endif
 			}else if(gVrMenuSelection == VR_MAIN_ABOUT){
 				gVrMenuPage = VR_MENU_PAGE_ABOUT;
 				gVrWelcomeFirstRun = false;
@@ -1572,7 +1789,7 @@ VrDebugUpdate(const PadInput &in)
 				// A player who sat down to start and then stood up is riding an
 				// eye height taken while seated until this runs.
 				androidgame::VrRecenterView();
-				gVrMenuVisible = false;
+				SetVrMenuVisible(false);
 				break;
 			case VR_LOCOMOTION_BACK:
 				gVrMenuPage = VR_MENU_PAGE_SETTINGS;
@@ -1608,6 +1825,69 @@ VrDebugUpdate(const PadInput &in)
 			}else if(gVrControlsSelection == VR_CONTROLS_BACK){
 				gVrMenuPage = VR_MENU_PAGE_SETTINGS;
 			}
+#if MIAMIVR_STEAM_FRAME
+		}else if(gVrMenuPage == VR_MENU_PAGE_CAMERA_SCALE &&
+		         (positivePulse || decreasePulse)){
+			const int direction = decreasePulse ? -1 : 1;
+			switch(gVrCameraScaleSelection){
+			case VR_CAMERA_PROFILE:
+				gDefaultsProfile = (gDefaultsProfile+2+direction)%2;
+				SaveDefaultsProfile();
+				break;
+			case VR_CAMERA_APPLY_DEFAULTS:
+				ApplyDefaultProfile();
+				break;
+			case VR_CAMERA_WORLD_SIZE: {
+				int apparentPercent = (int)(100.0f/gWorldScale+0.5f);
+				apparentPercent = Min(Max(apparentPercent+direction*5, 25), 400);
+				gWorldScale = 100.0f/(float)apparentPercent;
+				SaveVrFloat("WorldScale", gWorldScale);
+				rw::vulkan::setWorldScale(gWorldScale);
+				break;
+			}
+			case VR_CAMERA_CLOSER:
+				gCameraCloserCenti = Min(Max(gCameraCloserCenti+
+					direction*5, -100), 80);
+				SaveVrInteger("CameraCloserCenti", gCameraCloserCenti);
+				break;
+			case VR_CAMERA_LOWER:
+				gCameraLowerCenti = Min(Max(gCameraLowerCenti+
+					direction*5, -100), 100);
+				SaveVrInteger("CameraLowerCenti", gCameraLowerCenti);
+				break;
+			case VR_CAMERA_HEIGHT_OFFSET:
+				gHeightOffsetCm = Min(Max(gHeightOffsetCm+
+					direction*5, -100), 100);
+				SaveVrInteger("HeightOffsetCm", gHeightOffsetCm);
+				rw::vulkan::setTrackingComfort(
+					gHeadTranslationPercent/100.0f,
+					gHeightOffsetCm/100.0f, gSeatedTracking);
+				break;
+			case VR_CAMERA_SEATED:
+				gSeatedTracking = !gSeatedTracking;
+				SaveVrInteger("Seated", gSeatedTracking);
+				rw::vulkan::setTrackingComfort(
+					gHeadTranslationPercent/100.0f,
+					gHeightOffsetCm/100.0f, gSeatedTracking);
+				break;
+			case VR_CAMERA_HEAD_TRANSLATION:
+				gHeadTranslationPercent = Min(Max(
+					gHeadTranslationPercent+direction*5, 0), 200);
+				SaveVrInteger("HeadTranslationPercent",
+					gHeadTranslationPercent);
+				rw::vulkan::setTrackingComfort(
+					gHeadTranslationPercent/100.0f,
+					gHeightOffsetCm/100.0f, gSeatedTracking);
+				break;
+			case VR_CAMERA_PAGE_SIDE:
+				gSettingsPageSide = (gSettingsPageSide+3+direction)%3;
+				SaveVrInteger("SettingsPageSide", gSettingsPageSide);
+				break;
+			case VR_CAMERA_BACK:
+				gVrMenuPage = VR_MENU_PAGE_SETTINGS;
+				break;
+			}
+#endif
 		}
 
 #if MIAMIVR_STEAM_FRAME
@@ -1639,7 +1919,11 @@ QuestMainCategoryColour(int item, uint8 *red, uint8 *green, uint8 *blue)
 {
 	static const uint8 colours[VR_MAIN_ITEM_COUNT][3] = {
 		{100,225,255}, {255,205,90}, {90,220,210},
+#if MIAMIVR_STEAM_FRAME
+		{145,200,255}, {205,155,255}, {170,190,210}
+#else
 		{145,200,255}, {170,190,210}
+#endif
 	};
 	*red = colours[item][0]; *green = colours[item][1];
 	*blue = colours[item][2];
@@ -1658,6 +1942,9 @@ QuestMenuPageColour(uint8 *red, uint8 *green, uint8 *blue)
 	case VR_MENU_PAGE_LOCOMOTION:
 		category = VR_MAIN_LOCOMOTION_SETTINGS; break;
 	case VR_MENU_PAGE_CONTROLS: category = VR_MAIN_CONTROLS; break;
+#if MIAMIVR_STEAM_FRAME
+	case VR_MENU_PAGE_CAMERA_SCALE: category = VR_MAIN_CAMERA_SCALE; break;
+#endif
 	case VR_MENU_PAGE_ABOUT: category = VR_MAIN_ABOUT; break;
 	}
 	if(category < 0){
@@ -1734,6 +2021,9 @@ DrawQuestSettingsPage(void)
 	strcpy(rows[VR_MAIN_HUD], "HUD  < OPEN >");
 	strcpy(rows[VR_MAIN_LOCOMOTION_SETTINGS], "LOCOMOTION  < OPEN >");
 	strcpy(rows[VR_MAIN_CONTROLS], "CONTROLS  < OPEN >");
+#if MIAMIVR_STEAM_FRAME
+	strcpy(rows[VR_MAIN_CAMERA_SCALE], "CAMERA & SCALE  < OPEN >");
+#endif
 	strcpy(rows[VR_MAIN_ABOUT], "ABOUT GTA III VR  < OPEN >");
 
 #if MIAMIVR_STEAM_FRAME
@@ -2063,6 +2353,44 @@ DrawQuestControlsPage(void)
 		VR_MENU_WIDTH/2, 718, 2, 170, 190, 210);
 }
 
+#if MIAMIVR_STEAM_FRAME
+static void
+DrawQuestCameraScalePage(void)
+{
+	BeginFullVrMenuPage("CAMERA & SCALE",
+		"STANDARD OR FRAME PERSONAL DEFAULTS; VALUES SAVE AS YOU CHANGE THEM");
+	char rows[VR_CAMERA_ITEM_COUNT][112];
+	snprintf(rows[VR_CAMERA_PROFILE], sizeof(rows[0]),
+		"DEFAULTS PROFILE  < %s >",
+		gDefaultsProfile ? "FRAME PERSONAL" : "STANDARD");
+	strcpy(rows[VR_CAMERA_APPLY_DEFAULTS], "APPLY PROFILE DEFAULTS");
+	snprintf(rows[VR_CAMERA_WORLD_SIZE], sizeof(rows[0]),
+		"WORLD SIZE  < %d%% >", (int)(100.0f/gWorldScale+0.5f));
+	snprintf(rows[VR_CAMERA_CLOSER], sizeof(rows[0]),
+		"CAMERA CLOSER  < %+.2f >", gCameraCloserCenti/100.0f);
+	snprintf(rows[VR_CAMERA_LOWER], sizeof(rows[0]),
+		"CAMERA LOWER  < %+.2f >", gCameraLowerCenti/100.0f);
+	snprintf(rows[VR_CAMERA_HEIGHT_OFFSET], sizeof(rows[0]),
+		"HEIGHT OFFSET  < %+.2f M >", gHeightOffsetCm/100.0f);
+	snprintf(rows[VR_CAMERA_SEATED], sizeof(rows[0]),
+		"SEATED  < %s >", gSeatedTracking ? "ON" : "OFF");
+	snprintf(rows[VR_CAMERA_HEAD_TRANSLATION], sizeof(rows[0]),
+		"HEAD TRANSLATION  < %d%% >", gHeadTranslationPercent);
+	snprintf(rows[VR_CAMERA_PAGE_SIDE], sizeof(rows[0]),
+		"SETTINGS PAGE SIDE  < %s >",
+		gSettingsPageSide == 1 ? "LEFT" :
+		gSettingsPageSide == 2 ? "CENTRE" : "RIGHT");
+	strcpy(rows[VR_CAMERA_BACK], "BACK TO SETTINGS");
+	SetMenuRows(VR_MENU_PAGE_CAMERA_SCALE, VR_CAMERA_ITEM_COUNT, 180, 52);
+	for(int item = 0; item < VR_CAMERA_ITEM_COUNT; item++)
+		DrawFullVrMenuRow(rows[item], 180+item*52, 3,
+			item == gVrCameraScaleSelection);
+	DrawVrMenuText(
+		"L-GRIP + RIGHT STICK: SCALE AND CAMERA WHEN NOT IN A VEHICLE",
+		VR_MENU_WIDTH/2, 718, 2, 170, 190, 210);
+}
+#endif
+
 static void
 DrawQuestAboutPage(void)
 {
@@ -2074,8 +2402,10 @@ DrawQuestAboutPage(void)
 		"MENU ON ITS OWN IS START: PAUSE",
 		"VIEW, SHORT PRESS: BACK, OR SWITCH FIRST / THIRD PERSON IN PLAY",
 		"VIEW, HOLD: RECENTRE",
-		"THE GAME STARTS IN THIRD PERSON ON THE 3D SCREEN",
-		"IF THAT FEELS FLAT, TRY SETTINGS > LOCOMOTION > VIEW",
+		"DEFAULT VIEW: THIRD PERSON OVER THE SHOULDER",
+		"D-PAD UP: PICK UP / ACTION (L1)",
+		"L-GRIP + RIGHT STICK: ADJUST CAMERA AND WORLD SIZE",
+		"SETTINGS > CAMERA & SCALE: HEIGHT, SEATED, PAGE SIDE",
 		"CLASSIC VEGETATION AND MSAA OFF ARE THE LIGHTEST ON " VR_PLATFORM_NAME,
 		"THIS PORT IS STILL IN DEVELOPMENT",
 		"PRESS ANY BUTTON TO CLOSE"
@@ -2118,6 +2448,11 @@ VrDebugPixels(int *width, int *height)
 		case VR_MENU_PAGE_CONTROLS:
 			DrawQuestControlsPage();
 			break;
+#if MIAMIVR_STEAM_FRAME
+		case VR_MENU_PAGE_CAMERA_SCALE:
+			DrawQuestCameraScalePage();
+			break;
+#endif
 		case VR_MENU_PAGE_ABOUT:
 			DrawQuestAboutPage();
 			break;
@@ -2384,6 +2719,50 @@ VrSnapTurnAngleDegrees(void)
 	LoadVrSettings();
 	return gQuestSnapTurnAngleDegrees;
 }
+
+#if MIAMIVR_STEAM_FRAME
+void
+VrGetCameraScaleAdjustments(float *worldScale, float *cameraCloser,
+                            float *cameraLower)
+{
+	LoadVrSettings();
+	if(worldScale) *worldScale = gWorldScale;
+	if(cameraCloser) *cameraCloser = gCameraCloserCenti/100.0f;
+	if(cameraLower) *cameraLower = gCameraLowerCenti/100.0f;
+}
+
+void
+VrSetCameraScaleAdjustments(float worldScale, float cameraCloser,
+                            float cameraLower)
+{
+	LoadVrSettings();
+	if(isfinite(worldScale))
+		gWorldScale = Clamp(worldScale, 0.25f, 4.0f);
+	if(isfinite(cameraCloser))
+		gCameraCloserCenti = (int)lrintf(
+			Clamp(cameraCloser, -1.0f, 0.8f)*100.0f);
+	if(isfinite(cameraLower))
+		gCameraLowerCenti = (int)lrintf(
+			Clamp(cameraLower, -1.0f, 1.0f)*100.0f);
+	rw::vulkan::setWorldScale(gWorldScale);
+}
+
+void
+VrSaveCameraScaleAdjustments(void)
+{
+	LoadVrSettings();
+	SaveVrFloat("WorldScale", gWorldScale);
+	SaveVrInteger("CameraCloserCenti", gCameraCloserCenti);
+	SaveVrInteger("CameraLowerCenti", gCameraLowerCenti);
+}
+
+int
+VrSettingsPageSide(void)
+{
+	LoadVrSettings();
+	return gSettingsPageSide;
+}
+#endif
 
 int
 VrPadBinding(int source)

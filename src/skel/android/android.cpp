@@ -46,6 +46,10 @@
 #include "frame_diag.h"
 #endif
 #include "vulkan/rwvk.h"
+#if MIAMIVR_STEAM_FRAME
+#include "sfvr/sfvr_adjust.h"
+#include "sfvr/sfvr_camera.h"
+#endif
 
 #include <android/log.h>
 #define ALOG(...) __android_log_print(ANDROID_LOG_INFO, "GTA3VR", __VA_ARGS__)
@@ -353,6 +357,13 @@ _psGetUserFilesFolder(void)
 }
 
 static androidgame::PadInput gPadInput;
+#if MIAMIVR_STEAM_FRAME
+static sfvr_adjust_state gCameraScaleAdjustState;
+static sfvr_adjust_config gCameraScaleAdjustConfig;
+static bool gCameraScaleAdjustInitialized;
+static bool gCameraScaleAdjustWasActive;
+static bool gCameraScaleAdjustDirty;
+#endif
 
 // Read by psTimer; written once per frame from the XR layer.
 long long gVrFrameTimeNs;
@@ -500,6 +511,9 @@ VrApplyPadBindings(CControllerState *state, const PadInput &input,
 		(int16)(Clamp(input.rightGrip, 0.0f, 1.0f)*255.0f),
 		(int16)(input.leftStickClick  ? 255 : 0),
 		(int16)(input.rightStickClick ? 255 : 0)
+#if MIAMIVR_STEAM_FRAME
+		,(int16)(input.dpadUp ? 255 : 0)
+#endif
 	};
 
 	for(int target = VR_PAD_TARGET_NONE+1; target < VR_PAD_TARGET_COUNT;
@@ -1513,6 +1527,33 @@ VrUpdateFirstPersonAnchor(bool postPhysics)
 			}
 		}
 #endif
+		#if MIAMIVR_STEAM_FRAME
+		// Keep the native chase camera as the source of truth. Adjust only the
+		// rendered on-foot camera and clamp it with the same LOS query the game
+		// uses for its ordinary chase view.
+		if(thirdPersonOnFoot){
+			float worldScale, cameraCloser, cameraLower;
+			androidgame::VrGetCameraScaleAdjustments(
+				&worldScale, &cameraCloser, &cameraLower);
+			(void)worldScale;
+			if(cameraCloser != 0.0f || cameraLower != 0.0f){
+				const CVector target = player->GetPosition();
+				const float sourcePlay[3] = { head.x, head.z, head.y };
+				const float targetPlay[3] = { target.x, target.z, target.y };
+				float adjustedPlay[3];
+				sfvr_camera_origin(sourcePlay, targetPlay,
+					cameraCloser, cameraLower, adjustedPlay);
+				CVector adjusted(adjustedPlay[0], adjustedPlay[2],
+					adjustedPlay[1]);
+				CColPoint collision;
+				CEntity *hit = nil;
+				if(CWorld::ProcessLineOfSight(target, adjusted, collision,
+				   hit, true, false, false, true, false, true, true))
+					adjusted = collision.point;
+				head = adjusted;
+			}
+		}
+		#endif
 		bool fullVehicleBasis = false;
 #if MIAMIVR_STEAM_FRAME
 		// In a vehicle the view is yaw-only by default. With
@@ -1785,6 +1826,72 @@ DiagStartNewGame(void)
 }
 #endif
 
+#if MIAMIVR_STEAM_FRAME
+static void
+UpdateCameraScaleModifier(androidgame::PadInput *input)
+{
+	if(!input)
+		return;
+	if(!gCameraScaleAdjustInitialized){
+		sfvr_adjust_config_default(&gCameraScaleAdjustConfig);
+		gCameraScaleAdjustConfig.world_scale_min = 0.25f;
+		gCameraScaleAdjustConfig.world_scale_max = 4.0f;
+		sfvr_adjust_init(&gCameraScaleAdjustState);
+		gCameraScaleAdjustInitialized = true;
+	}
+	const bool remoteMode =
+		CWorld::Players[CWorld::PlayerInFocus].IsPlayerInRemoteMode();
+	const bool onFoot = gGameState == GS_PLAYING_GAME &&
+		!FrontEndMenuManager.m_bGameNotLoaded &&
+		!FrontEndMenuManager.m_bMenuActive &&
+		!FrontEndMenuManager.m_bWantToRestart &&
+		!FrontEndMenuManager.m_bWantToLoad &&
+		!CGame::playingIntro && !FindPlayerVehicle() && !remoteMode &&
+		!CCutsceneMgr::IsRunning() &&
+		!CCutsceneMgr::IsCutsceneProcessing() &&
+		!TheCamera.m_WideScreenOn;
+	const bool settingsPreview = androidgame::VrMenuConsumesInput() &&
+		!androidgame::VrThirdPersonScreen();
+	const bool thirdPerson = androidgame::VrThirdPersonShoulder();
+	const bool gripAvailable = androidgame::VrPadBinding(
+		androidgame::VR_PAD_SOURCE_LEFT_GRIP) == androidgame::VR_PAD_TARGET_NONE;
+	const bool eligible = xrvk::isSessionFocused() && onFoot &&
+		((thirdPerson && gripAvailable) || settingsPreview);
+	const bool modifier = eligible && input->leftGrip >= 0.65f;
+	if(!xrvk::isSessionFocused()){
+		sfvr_adjust_focus_lost(&gCameraScaleAdjustState);
+		if(gCameraScaleAdjustDirty){
+			androidgame::VrSaveCameraScaleAdjustments();
+			gCameraScaleAdjustDirty = false;
+		}
+	}
+	float worldScale, cameraCloser, cameraLower;
+	androidgame::VrGetCameraScaleAdjustments(
+		&worldScale, &cameraCloser, &cameraLower);
+	float right[2] = { input->rightStickX, input->rightStickY };
+	const double displaySeconds =
+		(double)xrvk::getPredictedDisplayTimeNs()*1.0e-9;
+	if(sfvr_adjust_update(&gCameraScaleAdjustState,
+	   &gCameraScaleAdjustConfig, right,
+	   input->leftGrip >= 0.65f, eligible, input->menu,
+	   input->viewActive || input->viewBack, displaySeconds,
+	   &worldScale, thirdPerson ? &cameraCloser : nil,
+	   thirdPerson ? &cameraLower : nil)){
+		androidgame::VrSetCameraScaleAdjustments(
+			worldScale, cameraCloser, cameraLower);
+		gCameraScaleAdjustDirty = true;
+	}
+	input->rightStickX = right[0];
+	input->rightStickY = right[1];
+	if(gCameraScaleAdjustWasActive && !modifier){
+		if(gCameraScaleAdjustDirty)
+			androidgame::VrSaveCameraScaleAdjustments();
+		gCameraScaleAdjustDirty = false;
+	}
+	gCameraScaleAdjustWasActive = modifier;
+}
+#endif
+
 void
 CapturePad(RwInt32 padID)
 {
@@ -1800,6 +1907,9 @@ CapturePad(RwInt32 padID)
 	state.Clear();
 
 	const androidgame::PadInput &in = gPadInput;
+#if MIAMIVR_STEAM_FRAME
+	UpdateCameraScaleModifier(&gPadInput);
+#endif
 	if(androidgame::VrMenuConsumesInput())
 		return;
 
@@ -2022,7 +2132,7 @@ CapturePad(RwInt32 padID)
 	// frontend and in play, alongside the stick-built one above.
 	if(in.dpadLeft)  state.DPadLeft  = 255;
 	if(in.dpadRight) state.DPadRight = 255;
-	if(in.dpadUp)    state.DPadUp    = 255;
+	if(in.dpadUp && !padOnFoot) state.DPadUp = 255;
 	if(in.dpadDown)  state.DPadDown  = 255;
 #endif
 	// Controller configuration 2 cycles the car camera on D-pad up and down,
