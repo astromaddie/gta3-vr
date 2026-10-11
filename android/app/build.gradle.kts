@@ -48,8 +48,8 @@ android {
 		// The Steam Frame's Android container (Lepton) is Android 11 / API 30.
 		minSdk = 30
 		targetSdk = 35
-		versionCode = 1
-		versionName = "0.1.0"
+		versionCode = 201
+		versionName = "0.2.1"
 
 		ndk {
 			abiFilters += "arm64-v8a"
