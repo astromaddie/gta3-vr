@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build the GTA III VR Steam Frame APK from this checkout (Mac or Linux).
+# Build the GTA III VR Steam Frame APK from this checkout on x86-64 Linux, macOS
+# or x86-64 Ubuntu in Windows WSL2.
 #
 #   tools/steam_frame/build.sh [-- extra gradle args]
 #

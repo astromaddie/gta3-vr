@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Install, launch and feed GTA III VR on a Valve Steam Frame (Android in the
-# Lepton container) from a Mac or Linux host.
+# Lepton container) from x86-64 Linux, macOS or x86-64 Ubuntu in WSL2.
 #
 #   tools/steam_frame/deploy.sh [options]
 #
@@ -27,9 +27,10 @@
 #   (the APK is built against the matching list):
 #   --port-assets      install them without anything else
 #   --no-port-assets   skip them on an install
-#   --register-title   register ~/devkit-game/GTA3VR as a persistent Steam
-#                      library title (once). When the title exists, every
-#                      install also refreshes its copy of the APK.
+#   --register-title   developer-only registration via a separately maintained
+#                      devkit-utils checkout; public first uploads should use
+#                      Valve's SteamOS Devkit Client Title Upload instead.
+#                      When the title exists, installs refresh its APK copy.
 #   --no-install       skip adb install
 #   --no-launch        skip starting the game over adb
 #   --logcat SECONDS   after launching, capture SECONDS of log into
@@ -47,8 +48,7 @@
 #                      Development needed
 #
 # Environment:
-#   FRAME_HOST       ssh target (default steamos@192.168.1.31, the Frame on
-#                    Wi-Fi; over USB networking use steamos@10.86.200.233)
+#   FRAME_HOST       required SSH target for your Frame, e.g. steamos@frame.local
 #   FRAME_ADB_HOST   adb host (default: the host part of FRAME_HOST). Lepton
 #                    Development publishes its adbd on <host>:5555
 #   ADB              adb binary
@@ -61,8 +61,8 @@
 #
 # Saves go to the storage root's userfiles/ (~/Documents/GTA3VR/userfiles).
 #
-# Before an unattended run (--diag, --logcat), make sure nobody is wearing the
-# headset: a launch replaces whatever they are playing.
+# Before an unattended run (--diag, --logcat), close the active game: a launch
+# replaces the current session.
 set -euo pipefail
 
 repo="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -76,7 +76,7 @@ steam_appid="12100"              # Grand Theft Auto III on Steam
 # matching is case-insensitive either way.
 required="data TEXT anim txd models audio mp3 skins movies"
 
-frame_host="${FRAME_HOST:-steamos@192.168.1.31}"
+frame_host="${FRAME_HOST:-}"
 adb_host="${FRAME_ADB_HOST:-${frame_host#*@}}"
 adb_bin="${ADB:-${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb}"
 [[ -x "$adb_bin" ]] || adb_bin="$(command -v adb || true)"
@@ -119,6 +119,7 @@ while (($#)); do
 	*) die "unknown option $1 (see --help)" ;;
 	esac
 done
+[[ -n "$frame_host" ]] || die 'set FRAME_HOST to steamos@<your-frame-host>'
 [[ -n "$apk" ]] || apk="$repo/android/app/build/outputs/apk/frame/app-frame.apk"
 
 ssh_frame() { ssh -o ConnectTimeout=10 -o BatchMode=yes "$frame_host" "$@"; }

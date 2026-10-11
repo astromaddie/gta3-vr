@@ -4,81 +4,56 @@ This is GTA III (re3) running as an Android app in the Frame's Lepton container.
 
 This guide covers setup, controls, display options and development tools. The [architecture notes](VR_ARCHITECTURE.md) explain the implementation, while [PORT_PLAN.md](PORT_PLAN.md) records design decisions and [STUBS.md](STUBS.md) lists known missing pieces.
 
-## 1. Build
+## 1. Build on a computer
 
-You need a JDK (17 or 21) and an Android SDK with platform 35, NDK
-27.2.12479018 and CMake 3.22.1:
+Use x86-64 Linux, macOS, or x86-64 Ubuntu under Windows WSL2. The Frame is the ARM64 run target, not the build host; the NDK's Linux host tools are x86-64. Apple Silicon Macs need Rosetta for the pinned x86-64 NDK tools.
 
-```sh
-brew install openjdk@17
-sdkmanager "platforms;android-35" "ndk;27.2.12479018" "cmake;3.22.1"
-```
+On Windows, install Ubuntu with [WSL2](https://learn.microsoft.com/windows/wsl/install), then install a Linux JDK 17 or 21 and the Linux Android SDK Command-Line Tools inside Ubuntu. For example, install OpenJDK with `sudo apt update && sudo apt install -y openjdk-17-jdk`, and download/extract the Linux SDK Command-Line Tools under `$HOME/Android/Sdk`. Keep `JAVA_HOME`, `ANDROID_HOME` and the checkout under the Linux home (for example, `~/src/gta3-vr`), not on a Windows-mounted path. See Android's [SDK command-line tools](https://developer.android.com/tools/sdkmanager) and [NDK downloads](https://developer.android.com/ndk/downloads).
 
-On a Mac the NDK's host tools are x86_64, so you need Rosetta. Then:
+Install JDK 17 or 21, Android SDK command-line tools (`sdkmanager`), platform 35, NDK 27.2.12479018 and CMake 3.22.1. The SDK is commonly `$HOME/Library/Android/sdk` on macOS and `$HOME/Android/Sdk` on Linux or WSL2.
 
 ```sh
+export JAVA_HOME="/path/to/jdk-17-or-21"
+export ANDROID_HOME="/path/to/android-sdk"
+export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+sdkmanager --sdk_root="$ANDROID_HOME" \
+  "platforms;android-35" "ndk;27.2.12479018" "cmake;3.22.1"
+sdkmanager --licenses
 tools/steam_frame/build.sh
-# -> android/app/build/outputs/apk/frame/app-frame.apk
 ```
 
-That runs `./gradlew :app:assembleFrame` in `android/`. It finds a JDK and the
-SDK by itself in the usual places, or you can set `JAVA_HOME` and
-`ANDROID_HOME`. A rebuild after a small change is quick; a clean build takes
-longer.
+The helper runs `./gradlew :app:assembleFrame`. The APK is `android/app/build/outputs/apk/frame/app-frame.apk`. A full retail game installation is needed to play, not to compile the APK. The exact checked source revision and prior full-build status are recorded in [PR0 readiness](PR0_READINESS.md).
 
-## 2. Install
+## 2. Create the Steam title, copy game files and play
 
-Do this once. Start **Lepton Development** from the Frame's Steam library (adb
-runs over it). Install GTA III from Steam on the Frame if you haven't, then:
+Create the first **GTA3VR** library entry with Valve's public [SteamOS Devkit Client Title Upload](https://partner.steamgames.com/doc/steamhardware/steamframe/loadgames). Pair the Frame with the client, then upload a folder containing the APK with **Name** `GTA3VR`, **Local Folder** set to that folder, **Start Command** `GTA3-VR.apk`, and **Runtime** `Android`:
 
 ```sh
-tools/steam_frame/deploy.sh --register-title
+mkdir -p .frame-upload/gta3
+cp android/app/build/outputs/apk/frame/app-frame.apk .frame-upload/gta3/GTA3-VR.apk
 ```
 
-That is all the game data needs. The game looks for GTA III in the Steam
-library when it starts and reads it in place, so nothing is copied. (Lepton can
-see Steam's folder but can't write to it, which is fine: saves and settings go
-to Documents.)
+On Windows, copy `.frame-upload/gta3` to your Windows Downloads folder (available inside WSL at `/mnt/c/Users/YOUR_WINDOWS_USERNAME/Downloads/`), then select that copied folder in the Devkit Client.
 
-If GTA III isn't installed in Steam on the Frame, the game uses a copy of the
-data in `~/Documents/GTA3VR/gamedata` instead. Make one from a PC install on your
-Mac or Linux box:
+Install GTA III through Steam on the Frame if you want the app to read it directly from the Steam library (app 12100). The game reads that install in place; saves and settings remain in Documents. The port's own text, frontend art and scripts must still be copied there. Enable SSH to the Frame and set its address; the build computer needs OpenSSH and `rsync` for transfers:
 
 ```sh
-tools/steam_frame/deploy.sh --game-dir "/path/to/Grand Theft Auto 3" --register-title
+export FRAME_HOST="steamos@FRAME_HOST_OR_IP"
+tools/steam_frame/deploy.sh --port-assets --no-adb --no-install --no-launch
 ```
 
-`--from-steam` also still works. It copies the Steam install into Documents on
-the headset, as a fallback. You don't need it any more. A copy you already made
-keeps working: when both exist the game prefers Steam, and uses the copy for
-anything Steam doesn't have.
+If GTA III is not installed through Steam on the Frame, copy the retail PC installation and port files into Documents instead. In WSL2, a Windows `C:\` game folder is available below `/mnt/c/`; this example uses the common Steam install path:
 
-What a deploy does:
+```sh
+tools/steam_frame/deploy.sh --game-dir "/mnt/c/Program Files (x86)/Steam/steamapps/common/Grand Theft Auto 3" \
+  --no-adb --no-install --no-launch
+```
 
-- Installs this repo's `gamefiles/` into `~/Documents/GTA3VR/gamedata`. Those
-  are re3's own text, frontend art and scripts, and without them the option
-  labels and button art are missing. The game always reads them from Documents,
-  never from Steam, so every deploy that installs an APK refreshes them (they
-  are tied to the build). `--port-assets` does just that step, and
-  `--no-port-assets` skips it.
-- Installs the APK in Lepton Development.
-- Registers a persistent **GTA3VR** title in the Steam library (that's the
-  `--register-title` part, only needed the first time).
-- With `--game-dir` or `--from-steam`, first copies the folders the game reads
-  (`data TEXT anim txd models audio mp3 skins movies`, and `gta3.ini`) into
-  Documents.
+The game-data copy contains `data TEXT anim txd models audio mp3 skins movies`, and `gta3.ini` when present. Port files and a PC game-data copy go in `~/Documents/GTA3VR/gamedata`; saves go in `~/Documents/GTA3VR/userfiles`, and settings in `gamedata/vr_settings.ini`. Both persist across Lepton resets. `--from-steam` can copy the Frame's Steam install into Documents as a fallback. The `[vr] game data:` log identifies whether the game selected Steam or the Documents copy.
 
-To see which one the game picked, look for `[vr] game data:` in the log. It says
-either `steam <folder>` or `Documents copy <folder> (no Steam install of app
-12100 found)`.
+For later builds, the helper refreshes the APK in the existing `~/devkit-game/GTA3VR` title folder. Run `tools/steam_frame/deploy.sh --no-adb --no-launch` for an SSH-only update; if the Devkit Client stored the title elsewhere, upload the new APK through the client again. Launch **GTA3VR from the Frame's Steam library** so SteamVR supplies controller input. For an ADB development install, start **Lepton Development** and omit `--no-adb`; an ADB-started app does not receive the Steam title's controller setup.
 
-Saves go to `~/Documents/GTA3VR/userfiles` and settings to
-`gamedata/vr_settings.ini`. Both survive a Lepton reset.
-
-After that, `tools/steam_frame/deploy.sh` on its own installs a new APK and
-refreshes the title's copy of it. `FRAME_HOST` sets the SSH target (the default
-is the Frame on Wi-Fi, `steamos@192.168.1.31`; over USB networking use
-`steamos@10.86.200.233`). `deploy.sh --help` lists everything else.
+`FRAME_HOST` must name your own Frame SSH target. For optional ADB development installs, add Android SDK platform-tools (`adb`) and start **Lepton Development**. `FRAME_ADB_HOST` can override the host used by that route.
 
 ## 3. Play
 
