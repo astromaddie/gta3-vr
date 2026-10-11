@@ -4,6 +4,8 @@ This is my Steam Frame version of [re3](https://github.com/mrxenginner/re3), the
 
 **EXPERIMENTAL.** I made this for personal use. This is the source for my Frame port, with the original re3 notices kept. You still need your own full retail game installation. The [build and publication notes](docs/PR0_READINESS.md) record the checks and inherited resources; the [earlier upstream README](docs/README_PRE_PR0.md) is preserved.
 
+**Want to play on Steam Frame?** Download the prebuilt standalone APK from the [v0.1.0 prerelease](https://github.com/astromaddie/gta3-vr/releases/tag/v0.1.0); no compiler is needed. You still need a full retail PC copy of GTA III; the package includes a helper for copying data from your own installation.
+
 The port has first-person, over-the-shoulder and 3D screen views. Left View switches views during play and recentres when held; both grips plus right Menu opens the VR settings panel. Stereo rendering, head tracking, the minimap, menus and 3D cutscenes are part of the Frame path. The current code still has gaps in sky and cloud rendering, some gameplay actions and vehicle types, and full-session behavior; see the [known stubs](docs/STUBS.md).
 
 ## Game data
