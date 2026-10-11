@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "milestone": "PR0",
+  "status": "EXPERIMENTAL",
+  "publication_status": "private preparation; no release published",
+  "audited_commit": "8b19bf2efb25073e5e8ba9357c25138e46c68de4",
+  "current_checkout_commit": "8b19bf2efb25073e5e8ba9357c25138e46c68de4",
+  "branch": "steam-frame",
+  "tested_commit": null,
+  "supported_targets": [
+    "Steam Frame / Lepton Android 11 API 30 / ARM64 / SteamVR OpenXR / Vulkan multiview"
+  ],
+  "validation": {
+    "source_commit": null,
+    "result": "No fresh build or tests were run for the audited source. The untracked scratchpad/ directory was preserved and excluded from the audit."
+  },
+  "full_application_build": "not run for current audited source",
+  "distribution_blockers": [
+    "reachable history contains 30 commercial game TXD textures. Deletion at current HEAD would not remove reachable objects. Two private-key markers are unclassified and are not confirmed credentials. Preserve the audit distinction and resolve rights/history before publication."
+  ],
+  "data_boundary": "Retail game files are external inputs. Existing host checks do not establish device behavior.",
+  "changelog": "CHANGELOG.md",
+  "audit_date": "2026-10-11",
+  "audit_details": "docs/PR0_READINESS.md"
+}
