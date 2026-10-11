@@ -1,22 +1,20 @@
-# PR0 — gta3-vr
+# PR0 — GTA III on Steam Frame
 
-**EXPERIMENTAL.** Kept private while the items below are resolved. See the [README](../README.md) for the port's features, controls, game-data requirements and build instructions.
+**EXPERIMENTAL.** Personal source fork of re3 with the Steam Frame VR layer. See the [README](../README.md) for features, required retail data and build instructions.
+
+Target: Steam Frame / Lepton Android 11 / ARM64 / SteamVR OpenXR / Vulkan multiview.
 
 | Record | Revision |
 | --- | --- |
-| Hygiene audit | `8b19bf2efb25073e5e8ba9357c25138e46c68de4` |
-| Key provenance review source | `3cc0388ec8265df9ced494511d5d43bd70aa679b` |
-| Build/test source | No fresh full-build SHA recorded in this audit. |
+| Earlier history audit | `8b19bf2efb25073e5e8ba9357c25138e46c68de4` |
+| Host-tested source | `61b53c95996ef031277958034149a6f0d8c74254` |
 
-Target: Steam Frame / Lepton Android 11 API 30 / ARM64 / SteamVR OpenXR / Vulkan multiview.
+The production camera scale and modifier tests, three controller binding profiles and Steam game-data resolver test passed without retail data. No fresh full APK build was run for this publication update.
 
-No fresh build or tests were run for the audited source. The untracked scratchpad/ directory was preserved and excluded from the audit. No new full application build is claimed for this audit.
+The fork retains the upstream `gamefiles/models` TXD resources and their history: 14 tracked at the reviewed tip, 30 across history. These came from upstream commits; the source license does not grant rights to Rockstar game media. The full retail game installation is supplied separately.
 
-The publication blockers are:
+Each of the two historical `premake5Linux` binaries contains server and CA key blocks matching [official Mbed TLS test fixtures](https://github.com/Mbed-TLS/mbedtls/blob/mbedtls-1.3.22/library/certs.c). Other PEM fragments remain unclassified; the comparison did not demonstrate a project credential. The audit used hashes and exposed no key bytes.
 
-- Reachable history contains 30 commercial game TXD textures. Removing them at HEAD would leave the historical objects available.
-- Each of two historical `premake5Linux` binaries contains a key block that exactly matches the published [Mbed TLS 1.3.22 test fixture](https://github.com/Mbed-TLS/mbedtls/blob/mbedtls-1.3.22/tests/data_files/server2.key). That matching block is test material. Other embedded private-key blocks remain unclassified and need provenance review.
-
-Retail game files are external inputs. Existing host checks do not establish device behavior. Keep the original upstream and component notices; they do not grant rights to the commercial game.
+Original upstream notices are retained. No APK or retail game archive is published. Existing local scratch work is excluded.
 
 [Exact metadata](PR0_METADATA.json) · [Changelog](../CHANGELOG.md)
