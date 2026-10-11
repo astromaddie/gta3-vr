@@ -1637,6 +1637,11 @@ Render2dStuff(void)
 	CDarkel::DrawMessages();
 	CGarages::PrintMessages();
 	CPad::PrintErrorMessage();
+#if defined(RW_VULKAN) && defined(__ANDROID__) && MIAMIVR_STEAM_FRAME
+	// The prompt shares this scene's 2D projection and font queue, after
+	// subtitles have been placed and before all queued text is flushed.
+	androidgame::VrDrawCutsceneSkipPrompt();
+#endif
 	CFont::DrawFonts();
 
 #ifdef DEBUGMENU

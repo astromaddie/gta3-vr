@@ -39,6 +39,8 @@ public:
 #endif
 	static int GetCutsceneTimeInMilleseconds(void) { return 1000.0f * ms_cutsceneTimer; }
 	static char *GetCutsceneName(void) { return ms_cutsceneName; }
+	// True only when the native skip path can finish this camera safely.
+	static bool CanSkipCutscene(void);
 	static void SetCutsceneOffset(const CVector& vec) { ms_cutsceneOffset = vec; }
 	static bool HasCutsceneFinished(void);
 

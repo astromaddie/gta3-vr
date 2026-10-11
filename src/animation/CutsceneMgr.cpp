@@ -410,6 +410,12 @@ CCutsceneMgr::Update(void)
 	if (!ms_running) return;
 
 	ms_cutsceneTimer += CTimer::GetTimeStepNonClippedInSeconds();
+	// Preserve the stock native gate and button aliases outside Steam Frame.
+#if defined(RW_VULKAN) && defined(__ANDROID__) && MIAMIVR_STEAM_FRAME
+	// Frame finishes through the physical-A hold in CapturePad. Suppressing
+	// this entire native tap branch also closes remapped, touch, Start/Menu
+	// and keyboard aliases without altering pad input elsewhere.
+#else
 	if (CGeneral::faststricmp(ms_cutsceneName, "end") && TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_FLYBY && ms_cutsceneLoadStatus == CUTSCENE_LOADING_0) {
 		if (CPad::GetPad(0)->GetCrossJustDown()
 			|| (CGame::playingIntro && CPad::GetPad(0)->GetStartJustDown())
@@ -421,6 +427,18 @@ CCutsceneMgr::Update(void)
 		)
 			FinishCutscene();
 	}
+#endif
+}
+
+bool
+CCutsceneMgr::CanSkipCutscene(void)
+{
+	// The ending shot and non-flyby cameras have no native spline endpoint to
+	// hand off to. Keep this predicate shared by the native and VR skip paths.
+	return ms_running && ms_loaded && !HasCutsceneFinished() &&
+		CGeneral::faststricmp(ms_cutsceneName, "end") &&
+		TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_FLYBY &&
+		ms_cutsceneLoadStatus == 0;
 }
 
 bool CCutsceneMgr::HasCutsceneFinished(void) { return TheCamera.GetPositionAlongSpline() == 1.0f; }

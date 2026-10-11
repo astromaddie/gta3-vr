@@ -94,6 +94,15 @@ On foot (A, B, X, Y and the grips can be changed on the CONTROLS page):
 | Right grip | Target |
 | Stick clicks | L3 and R3 (R3 looks behind, off in first person) |
 
+During a cutscene with a ready flyby camera, hold physical **A** for half a
+second to skip. A white ring fills clockwise around the A label, beside “Hold
+to skip” at the bottom right. A tap does not skip. The prompt appears only when
+the native camera can safely finish the scene; GTA III's “End” cutscene and
+non-flyby cameras remain unskippable. Menu, View, either grip, pause, loss of
+focus, loading, or leaving that camera cancels the hold and requires A to be
+released before trying again. Completion still goes through the game's native
+`FinishCutscene()` path so its mission script handoff is preserved.
+
 In a car, bike or boat. This layout is fixed and the CONTROLS page leaves it
 alone. Every action has a button of its own, so nothing doubles up:
 
