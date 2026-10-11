@@ -2,7 +2,7 @@
   "schema_version": 1,
   "milestone": "PR0",
   "status": "EXPERIMENTAL",
-  "publication_status": "prepared for public experimental source; no binary release",
+  "publication_status": "public experimental source; no binary release",
   "audited_commit": "8b19bf2efb25073e5e8ba9357c25138e46c68de4",
   "current_checkout_commit": "61b53c95996ef031277958034149a6f0d8c74254",
   "branch": "steam-frame",
@@ -38,5 +38,6 @@
   "distribution_notes": [
     "The fork retains upstream gamefiles/models TXD resources and their reachable history; its code notices do not grant rights to Rockstar game media. A full retail installation is supplied separately.",
     "Two embedded blocks in each historical premake5Linux binary match official Mbed TLS server and CA test fixtures. Other unmatched PEM fragments remain unclassified; no project credential was demonstrated."
-  ]
+  ],
+  "publication_date": "2026-10-11"
 }
