@@ -1,22 +1,8 @@
-# GTA III VR on the Steam Frame: architecture (current state)
+# GTA III VR on the Steam Frame: architecture
 
-This is re3 (GTA III) with the Vulkan multiview librw fork and the
-Android/OpenXR layer from the Vice City VR port, retargeted at the Valve Steam
-Frame. How to build, deploy and test is in [STEAM_FRAME.md](STEAM_FRAME.md). The
-plan this follows, with the reasons for each choice, is
-[PORT_PLAN.md](PORT_PLAN.md). Places where something is stubbed are listed in
-[STUBS.md](STUBS.md).
+This is re3 (GTA III) with a Vulkan multiview librw fork and the Android/OpenXR layer from the Vice City VR port, retargeted to Steam Frame. The VR path has first-person and third-person views, a 3D screen mode, a VR settings menu, and stereo rendering for gameplay and cutscenes.
 
-Status in one line: the port boots, starts a game and renders in stereo with
-nobody wearing it, and it has been worn twice. The first wear (2026-10-03)
-worked, with a flat minimap and muddled in-car buttons. The second (2026-10-04,
-over-shoulder view) said the controls feel good and the opening and cutscenes
-look good, and found five things: the camera came off Claude when he left a car,
-Claude always faced the camera instead of turning to walk, the draw distance was
-short with no row for it, the help pop-up was unreadable in the top-left corner
-and the HUD sat too close, and the mission title had the wrong proportions.
-All five are changed in the code and none has been tried on the headset.
-Section 9 says which claim is backed by what.
+The main setup guide is [STEAM_FRAME.md](STEAM_FRAME.md). [PORT_PLAN.md](PORT_PLAN.md) records design choices and [STUBS.md](STUBS.md) lists known gaps. Current code still lacks sky and cloud rendering and several gameplay pieces; the historical sections below retain the implementation record.
 
 ## 1. Target and probe facts
 

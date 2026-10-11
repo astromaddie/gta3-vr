@@ -1,28 +1,8 @@
 # GTA III VR on the Valve Steam Frame
 
-This is GTA III (re3) running natively on the Steam Frame as an Android app in
-Lepton, the Android 11 container the Frame uses. It draws in stereo with
-OpenXR and Vulkan, so there is no PC involved. You need your own copy of GTA
-III. The easy way is to install it on the Frame through Steam (app 12100); the
-game reads it from there and there is nothing to copy. A PC install works too.
+This is GTA III (re3) running as an Android app in the Frame's Lepton container. It uses OpenXR and Vulkan for stereo rendering, with no PC involved. The app can read a Steam installation of GTA III on the Frame or a copy in Documents. See the [main README](../README.md) for the project status, data requirements and quick build route.
 
-It is early. It boots, starts a new game and renders in stereo. It has been worn
-three times. The first time the minimap showed no roads and the in-car buttons
-were muddled. The second time (over the shoulder) the controls felt good and the
-opening and cutscenes looked good, and it turned up five things: the camera came
-off Claude when he got out of a car, he always faced where the camera looked
-instead of turning to walk, the draw distance was too short, the help pop-up
-could not be read and the HUD sat too close, and the mission title was the wrong
-shape. Those were fixed in the code. The third time (2026-10-05) the camera now
-stayed locked to the player whichever way the character faces, which is good and
-stays as it is. It also turned up four things: the laser dot was clipped to a half
-circle with a dither where it met the menu, the tooltips were too large and too
-central, the HUD in general seemed wrongly sized (the minimap was fine), and the
-display wasn't at the Frame's native 120 Hz and about 2160 pixels an eye.
-Everything from the third wear is host build, headset-unverified: it builds and
-the bindings test passes, and none of it has been tried on the headset yet.
-[VR_ARCHITECTURE.md](VR_ARCHITECTURE.md) has the details and an honest status
-table, and [PORT_PLAN.md](PORT_PLAN.md) has the reasoning.
+This guide covers setup, controls, display options and development tools. The [architecture notes](VR_ARCHITECTURE.md) explain the implementation, while [PORT_PLAN.md](PORT_PLAN.md) records design decisions and [STUBS.md](STUBS.md) lists known missing pieces.
 
 ## 1. Build
 
