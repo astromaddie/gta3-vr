@@ -11,7 +11,7 @@ Target: Steam Frame / Lepton Android 11 / ARM64 / SteamVR OpenXR / Vulkan multiv
 
 The production camera scale and modifier tests, three controller binding profiles and Steam game-data resolver test passed without retail data. No fresh full APK build was run for this publication update.
 
-The fork retains the upstream `gamefiles/models` TXD resources and their history: 14 tracked at the reviewed tip, 30 across history. These came from upstream commits; the source license does not grant rights to Rockstar game media. The full retail game installation is supplied separately.
+The fork retains the upstream `gamefiles/models` TXD resources, `gamefiles/neo/neo.txd` and their historical versions. These came from upstream commits; the source license does not grant rights to Rockstar game media. The full retail game installation is supplied separately.
 
 Each of the two historical `premake5Linux` binaries contains server and CA key blocks matching [official Mbed TLS test fixtures](https://github.com/Mbed-TLS/mbedtls/blob/mbedtls-1.3.22/library/certs.c). Other PEM fragments remain unclassified; the comparison did not demonstrate a project credential. The audit used hashes and exposed no key bytes.
 
